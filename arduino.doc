@@ -1,0 +1,33 @@
+#include <ESP8266WiFi.h>
+#include <ESP8266WebServer.h>
+
+const char* ssid = "NOME_DO_WIFI";
+const char* password = "SENHA_WIFI";
+
+ESP8266WebServer server(80);
+
+void setup() {
+  Serial.begin(115200);
+  WiFi.begin(ssid, password);
+
+  Serial.print("Conectando ao WiFi...");
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("Conectado!");
+  Serial.println(WiFi.localIP());
+
+  server.on("/dados", []() {
+    int valor = analogRead(A0);              // leitura do potenciômetro
+    float tensao = (valor / 1023.0) * 3.3;   // ajuste conforme referência
+    String json = "{\"tensao\": " + String(tensao, 2) + "}";
+    server.send(200, "application/json", json);
+  });
+
+  server.begin();
+}
+
+void loop() {
+  server.handleClient();
+}

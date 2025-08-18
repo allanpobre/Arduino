@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8">
+  <title>Monitor ESP8266</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+  <h2>Tensão do Potenciômetro</h2>
+  <canvas id="grafico" width="400" height="200"></canvas>
+
+  <script>
+    const ctx = document.getElementById('grafico').getContext('2d');
+    const grafico = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: [],
+        datasets: [{
+          label: 'Tensão (V)',
+          borderColor: 'blue',
+          data: []
+        }]
+      },
+      options: { responsive: true }
+    });
+
+    async function atualizar() {
+      try {
+        const resposta = await fetch("http://IP_DO_ESP/dados"); // substitua pelo IP do ESP
+        const dados = await resposta.json();
+
+        const tempo = new Date().toLocaleTimeString();
+        grafico.data.labels.push(tempo);
+        grafico.data.datasets[0].data.push(dados.tensao);
+
+        if (grafico.data.labels.length > 20) { // limite de pontos
+          grafico.data.labels.shift();
+          grafico.data.datasets[0].data.shift();
+        }
+
+        grafico.update();
+      } catch (e) {
+        console.log("Erro:", e);
+      }
+    }
+
+    setInterval(atualizar, 1000); // atualiza a cada 1s
+  </script>
+</body>
+</html>
