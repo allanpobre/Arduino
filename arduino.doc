@@ -1,27 +1,31 @@
 #include <ESP8266WiFi.h>
 #include <ESP8266WebServer.h>
+#include <ESP8266HTTPClient.h>
 
-const char* ssid = "NOME_DO_WIFI";
-const char* password = "SENHA_WIFI";
+const char* ssid = "eduardo";
+const char* password = "eduardods";
+const char* serverPHP = "http://192.168.137.18/Arduino/salvar_tensao.php";
 
 ESP8266WebServer server(80);
 
 void setup() {
   Serial.begin(115200);
-  WiFi.begin(ssid, password);
 
-  Serial.print("Conectando ao WiFi...");
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
+  WiFi.begin(ssid, password);
+  Serial.print("Conectando ao WiFi");
+  while (WiFi.status() != WL_CONNECTED) { 
+    delay(500); 
     Serial.print(".");
   }
-  Serial.println("Conectado!");
-  Serial.println(WiFi.localIP());
+  Serial.println("\nConectado!");
+  Serial.println("IP do ESP: " + WiFi.localIP().toString());
 
+  // Endpoint para o site
   server.on("/dados", []() {
-    int valor = analogRead(A0);              // leitura do potenciômetro
-    float tensao = (valor / 1023.0) * 3.3;   // ajuste conforme referência
+    int valor = analogRead(A0);
+    float tensao = (valor / 1023.0) * 3.3;
     String json = "{\"tensao\": " + String(tensao, 2) + "}";
+    server.sendHeader("Access-Control-Allow-Origin", "*");
     server.send(200, "application/json", json);
   });
 
@@ -30,4 +34,32 @@ void setup() {
 
 void loop() {
   server.handleClient();
+
+  int valor = analogRead(A0);
+  float tensao = (valor / 1023.0) * 3.3;
+
+  if (WiFi.status() == WL_CONNECTED) {
+    HTTPClient http;
+    WiFiClient client;
+    String url = String(serverPHP) + "?valor=" + String(tensao, 2);
+
+    Serial.println("Enviando para: " + url);
+
+    http.begin(client, url);
+    int code = http.GET();
+
+    if (code > 0) {
+      Serial.println("Código HTTP: " + String(code));
+      Serial.println("Resposta: " + http.getString());
+    } else {
+      Serial.print("Erro ao enviar dados: ");
+      Serial.println(http.errorToString(code));
+    }
+
+    http.end();
+  } else {
+    Serial.println("WiFi desconectado!");
+  }
+
+  delay(2000);
 }

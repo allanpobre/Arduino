@@ -1,0 +1,8 @@
+CREATE DATABASE esp_monitor;
+USE esp_monitor;
+
+CREATE TABLE tensao (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    valor FLOAT NOT NULL,
+    datahora DATETIME NOT NULL
+);

@@ -4,47 +4,57 @@
   <meta charset="UTF-8">
   <title>Monitor ESP8266</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body { font-family: Arial; text-align: center; margin: 20px; background: #f4f4f4; }
+    canvas { background: white; border-radius: 12px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); margin-top: 20px; }
+  </style>
 </head>
 <body>
-  <h2>Tensão do Potenciômetro</h2>
-  <canvas id="grafico" width="400" height="200"></canvas>
+  <h2>📊 Monitor de Tensão (ESP8266)</h2>
+  <p><b>Status:</b> <span id="status">Aguardando dados...</span></p>
+  <canvas id="grafico" width="300" height="150"></canvas>
 
   <script>
     const ctx = document.getElementById('grafico').getContext('2d');
     const grafico = new Chart(ctx, {
       type: 'line',
-      data: {
-        labels: [],
-        datasets: [{
-          label: 'Tensão (V)',
-          borderColor: 'blue',
-          data: []
-        }]
-      },
-      options: { responsive: true }
+      data: { labels: [], datasets: [{ label: 'Tensão (V)', borderColor: 'blue', backgroundColor: 'rgba(0,0,255,0.1)', data: [] }] },
+      options: { responsive: true, scales: { y: { beginAtZero: true, suggestedMax: 3.3 } } }
     });
+
+    const apiESP = "http://192.168.137.247/dados"; // IP do ESP
+    const limiteTensao = 2.10;
+    let alertaEnviado = false;
+
+    async function enviarWhatsApp(volts) {
+      const numero = "SEU_NUMERO";
+      const apiKey = "SEU_TOKEN";
+      const mensagem = `⚡ Alerta: Tensão chegou a ${volts.toFixed(2)} V`;
+      const url = `https://api.callmebot.com/whatsapp.php?phone=${numero}&text=${encodeURIComponent(mensagem)}&apikey=${apiKey}`;
+      try { await fetch(url); console.log("Mensagem enviada no WhatsApp!"); document.getElementById("status").innerText = "⚠️ Alerta enviado!"; }
+      catch (e) { console.error("Erro ao enviar mensagem:", e); }
+    }
 
     async function atualizar() {
       try {
-        const resposta = await fetch("http://IP_DO_ESP/dados"); // substitua pelo IP do ESP
+        const resposta = await fetch(apiESP);
         const dados = await resposta.json();
-
+        const tensao = dados.tensao;
+        document.getElementById("status").innerText = `Tensão atual: ${tensao.toFixed(2)} V`;
         const tempo = new Date().toLocaleTimeString();
         grafico.data.labels.push(tempo);
-        grafico.data.datasets[0].data.push(dados.tensao);
-
-        if (grafico.data.labels.length > 20) { // limite de pontos
-          grafico.data.labels.shift();
-          grafico.data.datasets[0].data.shift();
-        }
-
+        grafico.data.datasets[0].data.push(tensao);
+        if (grafico.data.labels.length > 20) { grafico.data.labels.shift(); grafico.data.datasets[0].data.shift(); }
         grafico.update();
+        if (tensao >= limiteTensao && !alertaEnviado) { enviarWhatsApp(tensao); alertaEnviado = true; }
+        if (tensao < limiteTensao) alertaEnviado = false;
       } catch (e) {
         console.log("Erro:", e);
+        document.getElementById("status").innerText = "Erro ao conectar ao ESP.";
       }
     }
 
-    setInterval(atualizar, 1000); // atualiza a cada 1s
+    setInterval(atualizar, 2000);
   </script>
 </body>
 </html>
