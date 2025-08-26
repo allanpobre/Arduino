@@ -1,65 +1,112 @@
 #include <ESP8266WiFi.h>
-#include <ESP8266WebServer.h>
 #include <ESP8266HTTPClient.h>
 
 const char* ssid = "eduardo";
 const char* password = "eduardods";
-const char* serverPHP = "http://192.168.137.18/Arduino/salvar_tensao.php";
+const char* serverPHP = "http://192.168.137.105/Arduino/salvar_tensao.php";
 
-ESP8266WebServer server(80);
+unsigned long lastSend = 0;
+const unsigned long SEND_INTERVAL = 5000; // 5s
+
+void printNetworkInfo() {
+  Serial.println("=== Rede ===");
+  Serial.print("SSID: "); Serial.println(WiFi.SSID());
+  Serial.print("IP do ESP: "); Serial.println(WiFi.localIP());
+  Serial.print("Gateway: "); Serial.println(WiFi.gatewayIP());
+  Serial.print("Mascara: "); Serial.println(WiFi.subnetMask());
+  Serial.println("============");
+}
+
+void testTcpOnce() {
+  const char* host = "192.168.137.105";
+  uint16_t port = 80;
+  WiFiClient client;
+  Serial.print("Tentando conectar TCP em ");
+  Serial.print(host);
+  Serial.print(":");
+  Serial.println(port);
+
+  if (client.connect(host, port)) {
+    Serial.println("TCP OK: conexão estabelecida!");
+    // Envia GET simples e imprime retorno bruto
+    client.print(String("GET /Arduino/salvar_tensao.php?valor=9.99 HTTP/1.1\r\n") +
+                 "Host: " + host + "\r\n" +
+                 "Connection: close\r\n\r\n");
+    unsigned long timeout = millis();
+    while (client.connected() && millis() - timeout < 3000) {
+      while (client.available()) {
+        Serial.write(client.read());
+        timeout = millis();
+      }
+    }
+    client.stop();
+    Serial.println("\n--- fim resposta TCP ---");
+  } else {
+    Serial.println("TCP FAIL: não foi possível conectar (connection failed).");
+  }
+}
 
 void setup() {
   Serial.begin(115200);
+  delay(100);
+  Serial.println();
+  Serial.println("Iniciando...");
 
   WiFi.begin(ssid, password);
   Serial.print("Conectando ao WiFi");
-  while (WiFi.status() != WL_CONNECTED) { 
-    delay(500); 
+  unsigned long t0 = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - t0 < 15000) {
+    delay(300);
     Serial.print(".");
   }
-  Serial.println("\nConectado!");
-  Serial.println("IP do ESP: " + WiFi.localIP().toString());
+  Serial.println();
 
-  // Endpoint para o site
-  server.on("/dados", []() {
-    int valor = analogRead(A0);
-    float tensao = (valor / 1023.0) * 3.3;
-    String json = "{\"tensao\": " + String(tensao, 2) + "}";
-    server.sendHeader("Access-Control-Allow-Origin", "*");
-    server.send(200, "application/json", json);
-  });
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("WiFi conectado!");
+  } else {
+    Serial.println("Falha ao conectar WiFi (timeout). Verifique credenciais/SSID.");
+  }
 
-  server.begin();
+  printNetworkInfo();
+
+  // TESTE TCP uma vez
+  testTcpOnce();
 }
 
 void loop() {
-  server.handleClient();
-
-  int valor = analogRead(A0);
-  float tensao = (valor / 1023.0) * 3.3;
-
-  if (WiFi.status() == WL_CONNECTED) {
-    HTTPClient http;
-    WiFiClient client;
-    String url = String(serverPHP) + "?valor=" + String(tensao, 2);
-
-    Serial.println("Enviando para: " + url);
-
-    http.begin(client, url);
-    int code = http.GET();
-
-    if (code > 0) {
-      Serial.println("Código HTTP: " + String(code));
-      Serial.println("Resposta: " + http.getString());
-    } else {
-      Serial.print("Erro ao enviar dados: ");
-      Serial.println(http.errorToString(code));
-    }
-
-    http.end();
-  } else {
-    Serial.println("WiFi desconectado!");
+  // mostra rede a cada 30s para conferência
+  static unsigned long lastNetPrint = 0;
+  if (millis() - lastNetPrint > 30000) {
+    lastNetPrint = millis();
+    printNetworkInfo();
   }
 
-  delay(2000);
+  // Envia dados ao PHP periodicamente
+  if (millis() - lastSend >= SEND_INTERVAL) {
+    lastSend = millis();
+    if (WiFi.status() == WL_CONNECTED) {
+      float tensao = 1.23; // teste fixo
+      String url = String(serverPHP) + "?valor=" + String(tensao, 2);
+      Serial.println("Enviando para: " + url);
+
+      // uso de HTTPClient com WiFiClient
+      WiFiClient client;
+      HTTPClient http;
+      http.begin(client, url);
+      int code = http.GET();
+      Serial.print("Código HTTP: ");
+      Serial.println(code);
+      if (code > 0) {
+        String payload = http.getString();
+        Serial.print("Resposta: ");
+        Serial.println(payload);
+      } else {
+        Serial.print("Erro ao enviar dados: ");
+        Serial.println(http.errorToString(code));
+      }
+      http.end();
+    } else {
+      Serial.println("WiFi desconectado - pulando envio");
+    }
+  }
 }
