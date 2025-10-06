@@ -40,10 +40,10 @@
 
   <script>
     // ========== CONFIG ==========
-    const ESP_ENDPOINT = "http://192.168.137.180/dados"; // <-- substitua pelo IP do seu ESP
-    const UPDATE_INTERVAL = 6000;       // intervalo entre leituras (ms)
+    const ESP_ENDPOINT = "http://192.168.137.1/Arduino/get_ultimo.php"; // <-- substitua pelo IP do seu ESP
+    const UPDATE_INTERVAL = 4000;       // intervalo entre leituras (ms)
     const ANIMATION_DURATION = 4500;    // duração da animação do Chart.js (ms)
-    const MAX_POINTS = 12;              // quantos pontos manter no gráfico
+    const MAX_POINTS = 6;              // quantos pontos manter no gráfico
     const MAX_FAILS_BEFORE_OFFLINE = 3; // quantas falhas até marcar offline
     const USE_FALLBACK_ON_ERROR = false; // se true, insere valor aleatório ao falhar (não recomendado)
 
