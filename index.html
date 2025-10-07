@@ -3,175 +3,460 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Leitura de Tensão - ESP8266</title>
+  <title>Leitura de Tensão — ESP8266 (UI melhorada)</title>
+
+  <!-- Bootstrap e ícones -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
   <style>
-    body { background:#eef2f6; padding:28px; font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial; }
-    .card-center{ max-width:420px; margin:24px auto; }
-    .chart-box{ width:360px; max-width:90vw; aspect-ratio:1/1; margin:0 auto; padding:12px;
-               background:#fff; border-radius:12px; box-shadow:0 6px 18px rgba(12,35,63,0.08);
-               display:flex; align-items:center; justify-content:center; }
+    :root{
+      --card-radius:18px;
+      --glass: rgba(255,255,255,0.7);
+    }
+    html,body{ height:100%; }
+    body{
+      margin:0; padding:28px; font-family: Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+      background: linear-gradient(180deg,#eef6ff 0%, #f6fbff 40%, #fbfdff 100%);
+      -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale;
+      color:#0c2640;
+    }
+
+    .app-shell{ max-width:980px; margin:18px auto; }
+    .topbar{ display:flex; gap:12px; align-items:center; justify-content:space-between; margin-bottom:18px; }
+    .brand{ display:flex; gap:12px; align-items:center; }
+    .logo{ width:48px; height:48px; border-radius:10px; display:flex; align-items:center; justify-content:center; font-weight:700; background:linear-gradient(135deg,#3b82f6,#06b6d4); color:white; box-shadow:0 6px 20px rgba(11,47,95,0.12); }
+
+    .card-modern{ border:0; border-radius:var(--card-radius); box-shadow:0 10px 30px rgba(12,35,63,0.08); overflow:hidden }
+    .grid{ display:grid; grid-template-columns: 1fr 340px; gap:18px; align-items:start; }
+    @media (max-width:900px){ .grid{ grid-template-columns: 1fr; } .right-col{ order:2 } }
+
+    .chart-area{ background:linear-gradient(180deg, rgba(255,255,255,0.9), rgba(250,253,255,0.9)); padding:18px; border-radius:14px; }
+    .chart-box{ width:100%; height:360px; display:flex; align-items:center; justify-content:center; }
     canvas{ width:100% !important; height:100% !important; }
-    .big-value{ font-weight:700; font-size:1.4rem; }
+
+    .stat{ display:flex; gap:8px; align-items:baseline; }
+    .big{ font-weight:800; font-size:1.6rem; }
+    .muted{ color:#6b7280; }
+
+    .controls{ display:flex; gap:8px; flex-wrap:wrap; }
+    .endpoint-pill{ max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+    .mini-card{ padding:12px; border-radius:12px; background:linear-gradient(180deg,#ffffff,#fbfdff); box-shadow:0 6px 18px rgba(12,35,63,0.04); }
+
+    .sparkline{ height:72px; }
+
+    footer{ margin-top:16px; text-align:center; color:#475569; font-size:0.9rem; }
   </style>
 </head>
 <body>
-  <div class="card card-center">
-    <div class="card-body">
-      <h5 class="card-title mb-3">Tensão (ESP8266)</h5>
-      <div class="chart-box"><canvas id="meuGrafico" aria-label="Gráfico de tensão" role="img"></canvas></div>
-
-      <div class="d-flex justify-content-between align-items-center mt-3">
-        <div><div class="small text-muted">Último valor</div><div id="ultimoValor" class="big-value">— V</div></div>
-        <div class="text-end"><div class="small text-muted">Atualizado</div><div id="ultimoHorario">—</div></div>
+  <div class="app-shell">
+    <div class="topbar">
+      <div class="brand">
+        <div class="logo">V</div>
+        <div>
+          <div style="font-weight:700; font-size:1.1rem">Leitura de Tensão</div>
+          <div class="muted" style="font-size:0.85rem">ESP8266 — Interface bonita e responsiva</div>
+        </div>
       </div>
 
-      <div class="d-flex gap-2 mt-3">
-        <button id="btnToggle" class="btn btn-outline-primary btn-sm">Pausar</button>
-        <button id="btnRetry" class="btn btn-outline-secondary btn-sm">Forçar leitura</button>
-        <button id="btnClear" class="btn btn-outline-secondary btn-sm">Limpar</button>
-        <div class="ms-auto"><small class="text-muted">Endpoint:</small><div style="max-width:160px"><small id="endpointLabel"></small></div></div>
+      <div class="d-flex gap-2 align-items-center">
+        <div class="text-end me-2">
+          <div class="muted" style="font-size:0.8rem">Status</div>
+          <div id="connBadge" class="badge bg-secondary">Iniciando</div>
+        </div>
+        <div>
+          <button id="btnSettings" class="btn btn-outline-primary btn-sm" title="Configurações"><i class="bi bi-gear"></i></button>
+        </div>
       </div>
+    </div>
 
-      <div class="status mt-2"><small id="statusText" class="text-muted">Iniciando...</small></div>
+    <div class="card card-modern">
+      <div class="card-body">
+        <div class="grid">
+          <!-- Left: gráfico grande -->
+          <div class="chart-area">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <div>
+                <div class="muted" style="font-size:0.85rem">Tensão (V)</div>
+                <div class="stat"><div id="displayValue" class="big">— V</div><div class="muted ms-2">Última leitura</div></div>
+              </div>
+
+              <div class="text-end">
+                <div class="muted" style="font-size:0.85rem">Atualizado</div>
+                <div id="displayTime" class="muted">—</div>
+              </div>
+            </div>
+
+            <div class="chart-box mini-card">
+              <canvas id="mainChart" aria-label="Gráfico de tensão" role="img"></canvas>
+            </div>
+
+            <div class="d-flex justify-content-between align-items-center mt-3">
+              <div class="muted">Histórico: <small id="pointsCount">0</small> pontos</div>
+              <div class="muted">Mín: <strong id="minVal">—</strong> — Máx: <strong id="maxVal">—</strong> — Média: <strong id="avgVal">—</strong></div>
+            </div>
+          </div>
+
+          <!-- Right: controles e resumo -->
+          <div class="right-col">
+            <div class="mini-card mb-3">
+              <div class="d-flex justify-content-between align-items-start">
+                <div>
+                  <div class="muted" style="font-size:0.85rem">Endpoint</div>
+                  <div class="endpoint-pill" style="font-weight:600;"> <span id="endpointLabel">http://192.168.137.1/Arduino/get_ultimo.php</span></div>
+                </div>
+                <div class="d-flex flex-column align-items-end">
+                  <div class="d-flex gap-1">
+                    <button id="btnCopy" class="btn btn-sm btn-outline-secondary" title="Copiar endpoint"><i class="bi bi-clipboard"></i></button>
+                    <button id="btnEdit" class="btn btn-sm btn-outline-secondary" title="Editar endpoint"><i class="bi bi-pencil"></i></button>
+                  </div>
+                  <small class="muted mt-2">Salva em localStorage</small>
+                </div>
+              </div>
+
+              <hr>
+
+              <div class="d-grid gap-2">
+                <div class="controls">
+                  <button id="btnToggle" class="btn btn-primary btn-sm"><i class="bi bi-pause-fill me-1"></i><span id="btnToggleText">Pausar</span></button>
+                  <button id="btnRetry" class="btn btn-outline-primary btn-sm"><i class="bi bi-arrow-repeat me-1"></i>Forçar leitura</button>
+                  <button id="btnClear" class="btn btn-outline-secondary btn-sm"><i class="bi bi-trash me-1"></i>Limpar</button>
+                </div>
+
+                <div>
+                  <label class="form-label small muted mb-1">Intervalo (ms)</label>
+                  <input id="intervalInput" type="number" class="form-control form-control-sm" min="500" step="100" />
+                </div>
+
+                <div>
+                  <label class="form-label small muted mb-1">Máx pontos no gráfico</label>
+                  <input id="maxPointsInput" type="number" class="form-control form-control-sm" min="4" max="240" />
+                </div>
+
+                <div class="d-flex gap-2 align-items-center">
+                  <div style="flex:1">
+                    <label class="form-label small muted mb-1">Fallback em erro</label>
+                    <select id="fallbackSelect" class="form-select form-select-sm">
+                      <option value="off">Desligado</option>
+                      <option value="random">Inserir valor random</option>
+                    </select>
+                  </div>
+                  <div style="width:120px">
+                    <label class="form-label small muted mb-1">Tentativas até offline</label>
+                    <input id="failsInput" type="number" class="form-control form-control-sm" min="1" max="10" />
+                  </div>
+                </div>
+
+              </div>
+            </div>
+
+            <div class="mini-card mb-3">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <div class="muted" style="font-size:0.85rem">Resumo rápido</div>
+                <div class="muted" style="font-size:0.85rem">Últimos <span id="summaryCount">0</span></div>
+              </div>
+
+              <div class="d-flex flex-column gap-2">
+                <div class="d-flex justify-content-between"><div class="muted">Último</div><div id="summaryLast">— V</div></div>
+                <div class="d-flex justify-content-between"><div class="muted">Min</div><div id="summaryMin">—</div></div>
+                <div class="d-flex justify-content-between"><div class="muted">Max</div><div id="summaryMax">—</div></div>
+                <div class="d-flex justify-content-between"><div class="muted">Média</div><div id="summaryAvg">—</div></div>
+              </div>
+
+              <hr>
+
+              <div class="muted" style="font-size:0.85rem">Sparkline</div>
+              <div class="sparkline"><canvas id="sparkChart"></canvas></div>
+            </div>
+
+            <div class="mini-card mb-2">
+              <div class="muted" style="font-size:0.85rem">Logs</div>
+              <pre id="log" style="height:120px; overflow:auto; margin:0; background:transparent; border:0; font-size:0.8rem;">Iniciando...</pre>
+            </div>
+          </div>
+        </div>
+
+        <footer>Feito com ❤️ — toque em "Configurações" para personalizar o endpoint e comportamento.</footer>
+      </div>
     </div>
   </div>
 
+  <!-- Modal de edição do endpoint -->
+  <div class="modal fade" id="editModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Configurações</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label">Endpoint do ESP</label>
+            <input id="modalEndpoint" class="form-control" placeholder="http://192.168.x.x/Arduino/get_ultimo.php" />
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Intervalo (ms)</label>
+            <input id="modalInterval" type="number" class="form-control" />
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Usar fallback</label>
+            <select id="modalFallback" class="form-select">
+              <option value="off">Desligado</option>
+              <option value="random">Random (0..3.3V)</option>
+            </select>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+          <button type="button" id="modalSave" class="btn btn-primary" data-bs-dismiss="modal">Salvar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
   <script>
-    // ========== CONFIG ==========
-    const ESP_ENDPOINT = "http://192.168.137.1/Arduino/get_ultimo.php"; // <-- substitua pelo IP do seu ESP
-    const UPDATE_INTERVAL = 4000;       // intervalo entre leituras (ms)
-    const ANIMATION_DURATION = 4500;    // duração da animação do Chart.js (ms)
-    const MAX_POINTS = 6;              // quantos pontos manter no gráfico
-    const MAX_FAILS_BEFORE_OFFLINE = 3; // quantas falhas até marcar offline
-    const USE_FALLBACK_ON_ERROR = false; // se true, insere valor aleatório ao falhar (não recomendado)
+    // ---------- CONFIG (valores iniciais) ----------
+    const DEFAULT_ENDPOINT = 'http://192.168.137.1/Arduino/get_ultimo.php';
+    const DEFAULT_INTERVAL = 4000;
+    const DEFAULT_MAX_POINTS = 6;
+    const DEFAULT_MAX_FAILS = 3;
 
-    // ========== UI refs ==========
-    document.getElementById('endpointLabel').innerText = ESP_ENDPOINT;
-    const ultimoValorEl = document.getElementById('ultimoValor');
-    const ultimoHorarioEl = document.getElementById('ultimoHorario');
-    const statusText = document.getElementById('statusText');
-    const btnToggle = document.getElementById('btnToggle');
-    const btnRetry = document.getElementById('btnRetry');
-    const btnClear = document.getElementById('btnClear');
-
-    // ========== Chart setup ==========
-    const labels = [];
-    const data = {
-      labels,
-      datasets: [{
-        label: 'Tensão (V)',
-        data: [],
-        fill: true,
-        tension: 0.35,
-        pointRadius: 3,
-        backgroundColor: 'rgba(54,162,235,0.15)',
-        borderColor: 'rgba(54,162,235,1)',
-        borderWidth: 2
-      }]
-    };
-
-    const config = {
-      type: 'line',
-      data,
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        animation: { duration: ANIMATION_DURATION, easing: 'linear' },
-        plugins: { legend: { display: false } },
-        scales: {
-          x: { display: false },
-          y: { beginAtZero: true, suggestedMax: 3.6, title: { display: true, text: 'Volts' } }
-        }
-      }
-    };
-
-    const ctx = document.getElementById('meuGrafico').getContext('2d');
-    const meuGrafico = new Chart(ctx, config);
-
-    // ========== state ==========
+    // ---------- Estado ----------
     let running = true;
     let failCount = 0;
     let offline = false;
+    let readings = []; // {t: Date, v: Number}
+    let timer = null;
 
-    btnToggle.addEventListener('click', () => {
-      running = !running;
-      btnToggle.innerText = running ? 'Pausar' : 'Continuar';
-      statusText.innerText = running ? (offline ? 'Offline — aguardando reconexão' : 'Atualizações ativas') : 'Atualizações pausadas';
-    });
+    // ---------- Elementos ----------
+    const endpointLabel = document.getElementById('endpointLabel');
+    const displayValue = document.getElementById('displayValue');
+    const displayTime = document.getElementById('displayTime');
+    const connBadge = document.getElementById('connBadge');
+    const logEl = document.getElementById('log');
 
-    btnClear.addEventListener('click', () => {
-      data.labels.length = 0;
-      data.datasets[0].data.length = 0;
-      meuGrafico.update();
-      ultimoValorEl.innerText = '— V';
-      ultimoHorarioEl.innerText = '—';
-    });
+    const btnToggle = document.getElementById('btnToggle');
+    const btnToggleText = document.getElementById('btnToggleText');
+    const btnRetry = document.getElementById('btnRetry');
+    const btnClear = document.getElementById('btnClear');
+    const btnCopy = document.getElementById('btnCopy');
+    const btnEdit = document.getElementById('btnEdit');
+    const btnSettings = document.getElementById('btnSettings');
 
-    btnRetry.addEventListener('click', () => {
-      // força uma tentativa imediata mesmo que esteja offline
-      offline = false;
-      failCount = 0;
-      statusText.innerText = 'Tentando...';
-      fetchFromESP();
-    });
+    const intervalInput = document.getElementById('intervalInput');
+    const maxPointsInput = document.getElementById('maxPointsInput');
+    const fallbackSelect = document.getElementById('fallbackSelect');
+    const failsInput = document.getElementById('failsInput');
 
-    function pushValue(value) {
-      const label = new Date().toLocaleTimeString();
-      data.labels.push(label);
-      data.datasets[0].data.push(value);
-      if (data.labels.length > MAX_POINTS) { data.labels.shift(); data.datasets[0].data.shift(); }
-      meuGrafico.update('active');
-      ultimoValorEl.innerText = value.toFixed(2) + ' V';
-      ultimoHorarioEl.innerText = new Date().toLocaleString();
+    const summaryCount = document.getElementById('summaryCount');
+    const summaryLast = document.getElementById('summaryLast');
+    const summaryMin = document.getElementById('summaryMin');
+    const summaryMax = document.getElementById('summaryMax');
+    const summaryAvg = document.getElementById('summaryAvg');
+
+    const pointsCount = document.getElementById('pointsCount');
+    const minVal = document.getElementById('minVal');
+    const maxVal = document.getElementById('maxVal');
+    const avgVal = document.getElementById('avgVal');
+
+    // Modal elements
+    const editModal = new bootstrap.Modal(document.getElementById('editModal'));
+    const modalEndpoint = document.getElementById('modalEndpoint');
+    const modalInterval = document.getElementById('modalInterval');
+    const modalFallback = document.getElementById('modalFallback');
+    const modalSave = document.getElementById('modalSave');
+
+    // load settings from localStorage
+    function loadSettings(){
+      const s = JSON.parse(localStorage.getItem('esp_settings')||'{}');
+      return {
+        endpoint: s.endpoint || DEFAULT_ENDPOINT,
+        interval: s.interval || DEFAULT_INTERVAL,
+        maxPoints: s.maxPoints || DEFAULT_MAX_POINTS,
+        fallback: s.fallback || 'off',
+        maxFails: s.maxFails || DEFAULT_MAX_FAILS
+      };
     }
 
-    async function fetchFromESP() {
-      try {
-        const resp = await fetch(ESP_ENDPOINT, { cache: "no-store" });
-        if (!resp.ok) throw new Error('HTTP ' + resp.status);
-        const json = await resp.json();
-        const v = parseFloat(json.tensao);
-        if (isNaN(v)) throw new Error('valor inválido no JSON');
-        // sucesso
-        failCount = 0;
-        offline = false;
-        statusText.innerText = 'Recebido do ESP';
-        statusText.className = 'text-success';
-        pushValue(v);
-      } catch (err) {
-        // falha ao buscar do ESP
-        failCount++;
-        console.warn('Erro ao buscar do ESP:', err);
-        statusText.innerText = `Erro ao ler ESP (${failCount}/${MAX_FAILS_BEFORE_OFFLINE}): ${err.message || err}`;
-        statusText.className = 'text-danger';
+    function saveSettings(settings){ localStorage.setItem('esp_settings', JSON.stringify(settings)); }
 
-        if (USE_FALLBACK_ON_ERROR) {
-          // comportamento opcional: inserir fallback (desligado por padrão)
-          const fallback = (Math.random() * 3.3);
-          pushValue(fallback);
-          statusText.innerText += ' · fallback inserido';
+    let settings = loadSettings();
+
+    // UI populate
+    endpointLabel.innerText = settings.endpoint;
+    intervalInput.value = settings.interval;
+    modalEndpoint.value = settings.endpoint;
+    modalInterval.value = settings.interval;
+    fallbackSelect.value = settings.fallback;
+    modalFallback.value = settings.fallback;
+    maxPointsInput.value = settings.maxPoints;
+    failsInput.value = settings.maxFails;
+
+    // ---------- Chart.js setup ----------
+    const mainCtx = document.getElementById('mainChart').getContext('2d');
+    const sparkCtx = document.getElementById('sparkChart').getContext('2d');
+
+    function createGradient(ctx){
+      const g = ctx.createLinearGradient(0,0,0,400);
+      g.addColorStop(0, 'rgba(59,130,246,0.18)');
+      g.addColorStop(1, 'rgba(59,130,246,0.02)');
+      return g;
+    }
+
+    const mainConfig = {
+      type: 'line',
+      data: { labels: [], datasets:[{ label:'Tensão (V)', data:[], fill:true, tension:0.3, pointRadius:4, borderWidth:2 }] },
+      options: {
+        responsive:true, maintainAspectRatio:false,
+        interaction:{mode:'index', intersect:false},
+        plugins:{ legend:{display:false}, tooltip:{callbacks:{label:ctx=> `${ctx.formattedValue} V`}}},
+        scales:{ x:{ display:true, grid:{display:false}}, y:{ beginAtZero:true, suggestedMax:3.6, title:{display:true, text:'Volts'} } }
+      }
+    };
+    const mainChart = new Chart(mainCtx, mainConfig);
+
+    const sparkConfig = { type:'line', data:{ labels:[], datasets:[{ data:[], fill:false, tension:0.5, pointRadius:0, borderWidth:1 }] }, options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{x:{display:false}, y:{display:false}} } };
+    const sparkChart = new Chart(sparkCtx, sparkConfig);
+
+    // update chart visuals gradient after render
+    function refreshGradients(){
+      mainChart.data.datasets[0].backgroundColor = createGradient(mainCtx);
+      mainChart.data.datasets[0].borderColor = 'rgba(59,130,246,1)';
+      mainChart.update('none');
+    }
+    refreshGradients();
+
+    // ---------- helpers ----------
+    function log(msg){ const now = new Date().toISOString(); logEl.textContent = `[${now}] ${msg}\n` + logEl.textContent; }
+
+    function setBadge(text, variant='secondary'){
+      connBadge.className = 'badge bg-' + variant;
+      connBadge.innerText = text;
+    }
+
+    function statsFromData(arr){
+      if(!arr.length) return {min:NaN,max:NaN,avg:NaN,last:NaN};
+      const vals = arr.map(r=>r.v);
+      const min = Math.min(...vals); const max = Math.max(...vals);
+      const avg = vals.reduce((a,b)=>a+b,0)/vals.length;
+      return {min,max,avg,last:vals[vals.length-1]};
+    }
+
+    function pushReading(v){
+      const now = new Date();
+      readings.push({t:now, v: Number(v)});
+      // trim
+      if(readings.length > Number(settings.maxPoints)) readings.shift();
+
+      // update charts
+      mainChart.data.labels = readings.map(r=> new Date(r.t).toLocaleTimeString());
+      mainChart.data.datasets[0].data = readings.map(r=> r.v);
+      mainChart.update('active');
+
+      sparkChart.data.labels = readings.map((r,i)=>i);
+      sparkChart.data.datasets[0].data = readings.map(r=>r.v);
+      sparkChart.update('none');
+
+      // update UI summary
+      const s = statsFromData(readings);
+      displayValue.innerText = isNaN(s.last) ? '— V' : s.last.toFixed(2) + ' V';
+      displayTime.innerText = now.toLocaleString();
+      pointsCount.innerText = readings.length;
+      minVal.innerText = isNaN(s.min)?'—': s.min.toFixed(2) + ' V';
+      maxVal.innerText = isNaN(s.max)?'—': s.max.toFixed(2) + ' V';
+      avgVal.innerText = isNaN(s.avg)?'—': s.avg.toFixed(2) + ' V';
+
+      summaryCount.innerText = readings.length;
+      summaryLast.innerText = isNaN(s.last)?'—': s.last.toFixed(2) + ' V';
+      summaryMin.innerText = isNaN(s.min)?'—': s.min.toFixed(2) + ' V';
+      summaryMax.innerText = isNaN(s.max)?'—': s.max.toFixed(2) + ' V';
+      summaryAvg.innerText = isNaN(s.avg)?'—': s.avg.toFixed(2) + ' V';
+    }
+
+    // ---------- network ----------
+    async function fetchFromESP(){
+      const url = settings.endpoint + (settings.endpoint.includes('?') ? '&_ts=' + Date.now() : '?_ts=' + Date.now());
+      try{
+        const resp = await fetch(url, {cache:'no-store'});
+        if(!resp.ok) throw new Error('HTTP ' + resp.status);
+        const json = await resp.json();
+        const v = parseFloat(json.tensao ?? json.valor ?? json.voltage ?? json.value);
+        if(isNaN(v)) throw new Error('JSON sem valor numérico');
+        failCount = 0; offline = false;
+        setBadge('Online','success');
+        log('Leitura: ' + v.toFixed(3) + ' V');
+        pushReading(v);
+      }catch(err){
+        failCount++;
+        log('Erro: ' + (err.message||err));
+        setBadge('Erro ('+failCount+')','warning');
+
+        if(settings.fallback === 'random'){
+          const fallback = (Math.random()*3.3);
+          log('Inserindo fallback: ' + fallback.toFixed(2) + ' V');
+          pushReading(fallback);
         } else {
-          // sem fallback: quando atingir o limite, marca offline e para de adicionar pontos
-          if (failCount >= MAX_FAILS_BEFORE_OFFLINE) {
+          if(failCount >= Number(settings.maxFails)){
             offline = true;
-            statusText.innerText = 'ESP offline — nenhum dado novo será adicionado. Verifique IP/CORS/ligação.';
-            statusText.className = 'text-muted';
+            setBadge('Offline','secondary');
+            log('Marca offline depois de ' + failCount + ' falhas');
           }
         }
       }
     }
 
-    // loop de atualização
-    setInterval(() => {
-      if (!running) return;
-      if (offline) return; // não tenta se marcado offline (a menos que usuário pressione Forçar leitura)
-      fetchFromESP();
-    }, UPDATE_INTERVAL);
+    function startLoop(){
+      if(timer) clearInterval(timer);
+      timer = setInterval(()=>{ if(running && !offline) fetchFromESP(); }, Number(settings.interval));
+    }
 
-    // primeira tentativa imediata
+    // ---------- UI actions ----------
+    btnToggle.addEventListener('click', ()=>{
+      running = !running; btnToggleText.innerText = running ? 'Pausar' : 'Continuar';
+      btnToggle.querySelector('i').className = running ? 'bi bi-pause-fill me-1' : 'bi bi-play-fill me-1';
+      setBadge(running ? (offline ? 'Offline' : 'Ativo') : 'Pausado', running ? (offline?'secondary':'success') : 'secondary');
+    });
+
+    btnRetry.addEventListener('click', ()=>{ offline=false; failCount=0; setBadge('Tentando','info'); fetchFromESP(); });
+    btnClear.addEventListener('click', ()=>{ readings=[]; mainChart.data.labels=[]; mainChart.data.datasets[0].data=[]; sparkChart.data.labels=[]; sparkChart.data.datasets[0].data=[]; mainChart.update(); sparkChart.update(); displayValue.innerText='— V'; displayTime.innerText='—'; log('Limpo histórico'); });
+
+    btnCopy.addEventListener('click', async ()=>{ try{ await navigator.clipboard.writeText(settings.endpoint); log('Endpoint copiado para área de transferência'); }catch(e){ log('Não foi possível copiar: '+e); } });
+    btnEdit.addEventListener('click', ()=>{ modalEndpoint.value = settings.endpoint; modalInterval.value = settings.interval; modalFallback.value = settings.fallback; editModal.show(); });
+    btnSettings.addEventListener('click', ()=>{ modalEndpoint.value = settings.endpoint; modalInterval.value = settings.interval; modalFallback.value = settings.fallback; editModal.show(); });
+
+    modalSave.addEventListener('click', ()=>{
+      settings.endpoint = modalEndpoint.value || settings.endpoint;
+      settings.interval = Number(modalInterval.value) || settings.interval;
+      settings.fallback = modalFallback.value || settings.fallback;
+      // also update quick inputs
+      endpointLabel.innerText = settings.endpoint;
+      intervalInput.value = settings.interval;
+      fallbackSelect.value = settings.fallback;
+      saveSettings(settings);
+      log('Configurações salvas');
+      startLoop();
+    });
+
+    intervalInput.addEventListener('change', ()=>{ settings.interval = Number(intervalInput.value) || settings.interval; modalInterval.value = settings.interval; saveSettings(settings); startLoop(); });
+    maxPointsInput.addEventListener('change', ()=>{ settings.maxPoints = Number(maxPointsInput.value) || settings.maxPoints; saveSettings(settings); });
+    fallbackSelect.addEventListener('change', ()=>{ settings.fallback = fallbackSelect.value; saveSettings(settings); });
+    failsInput.addEventListener('change', ()=>{ settings.maxFails = Number(failsInput.value) || settings.maxFails; saveSettings(settings); });
+
+    // populate modal defaults
+    document.getElementById('endpointLabel').innerText = settings.endpoint;
+
+    // iniciar
+    setBadge('Iniciando','secondary');
+    log('UI inicializada — endpoint: ' + settings.endpoint);
+    startLoop();
+    // primeira leitura imediata
     fetchFromESP();
+
+    // ajusta gradiente ao redimensionar
+    window.addEventListener('resize', ()=>{ refreshGradients(); });
   </script>
 </body>
 </html>
