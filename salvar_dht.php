@@ -1,10 +1,9 @@
 <?php
-// salvar_tensao.php - versão com validação e debug (apenas para DESENVOLVIMENTO)
+// salvar_dht.php
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
 header('Content-Type: application/json');
-// habilita CORS (se acessar a partir do navegador / fetch)
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type');
@@ -14,13 +13,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit;
 }
 
-// Config DB
 $host = "localhost";
 $db   = "esp_monitor";
 $user = "root";
 $pass = "";
 
-// conexão com tratamento de exceção
+// conexão com tratamento
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 try {
     $conn = new mysqli($host, $user, $pass, $db);
@@ -31,33 +29,35 @@ try {
     exit;
 }
 
-// obter e validar parametro
-if (!isset($_GET['valor'])) {
+// obter parametros (aceita GET ou POST)
+$temp_raw = $_GET['temp'] ?? $_POST['temp'] ?? null;
+$hum_raw  = $_GET['hum']  ?? $_POST['hum']  ?? null;
+
+if ($temp_raw === null || $hum_raw === null) {
     http_response_code(400);
-    echo json_encode(["status" => "erro", "mensagem" => "Parâmetro 'valor' ausente"]);
+    echo json_encode(["status" => "erro", "mensagem" => "Parâmetros 'temp' e 'hum' obrigatórios"]);
     $conn->close();
     exit;
 }
 
-$valor_raw = $_GET['valor'];
-if (!is_numeric($valor_raw)) {
+if (!is_numeric($temp_raw) || !is_numeric($hum_raw)) {
     http_response_code(400);
-    echo json_encode(["status" => "erro", "mensagem" => "Parâmetro 'valor' inválido: $valor_raw"]);
+    echo json_encode(["status" => "erro", "mensagem" => "Parâmetros inválidos: temp={$temp_raw}, hum={$hum_raw}"]);
     $conn->close();
     exit;
 }
 
-$valor = floatval($valor_raw);
+$temp = floatval($temp_raw);
+$hum  = floatval($hum_raw);
 $datahora = date('Y-m-d H:i:s');
 
-// preparar e executar
 try {
-    $stmt = $conn->prepare("INSERT INTO tensao (valor, datahora) VALUES (?, ?)");
+    $stmt = $conn->prepare("INSERT INTO dht (temperatura, umidade, datahora) VALUES (?, ?, ?)");
     if ($stmt === false) throw new Exception($conn->error);
-    $stmt->bind_param("ds", $valor, $datahora); // d = double, s = string
+    $stmt->bind_param("dds", $temp, $hum, $datahora); // d,d,s
     $stmt->execute();
 
-    echo json_encode(["status" => "ok", "valor" => $valor, "datahora" => $datahora]);
+    echo json_encode(["status" => "ok", "temperatura" => $temp, "umidade" => $hum, "datahora" => $datahora]);
     $stmt->close();
     $conn->close();
 } catch (Exception $e) {

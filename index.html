@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Leitura de Tensão — ESP8266 (UI melhorada)</title>
+  <title>Leitura DHT11 — ESP8266</title>
 
   <!-- Bootstrap e ícones -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -11,59 +11,35 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
   <style>
-    :root{
-      --card-radius:18px;
-      --glass: rgba(255,255,255,0.7);
-    }
+    :root{ --card-radius:12px; }
     html,body{ height:100%; }
-    body{
-      margin:0; padding:28px; font-family: Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
-      background: linear-gradient(180deg,#eef6ff 0%, #f6fbff 40%, #fbfdff 100%);
-      -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale;
-      color:#0c2640;
-    }
-
-    .app-shell{ max-width:980px; margin:18px auto; }
-    .topbar{ display:flex; gap:12px; align-items:center; justify-content:space-between; margin-bottom:18px; }
-    .brand{ display:flex; gap:12px; align-items:center; }
-    .logo{ width:48px; height:48px; border-radius:10px; display:flex; align-items:center; justify-content:center; font-weight:700; background:linear-gradient(135deg,#3b82f6,#06b6d4); color:white; box-shadow:0 6px 20px rgba(11,47,95,0.12); }
-
-    .card-modern{ border:0; border-radius:var(--card-radius); box-shadow:0 10px 30px rgba(12,35,63,0.08); overflow:hidden }
-    .grid{ display:grid; grid-template-columns: 1fr 340px; gap:18px; align-items:start; }
-    @media (max-width:900px){ .grid{ grid-template-columns: 1fr; } .right-col{ order:2 } }
-
-    .chart-area{ background:linear-gradient(180deg, rgba(255,255,255,0.9), rgba(250,253,255,0.9)); padding:18px; border-radius:14px; }
-    .chart-box{ width:100%; height:360px; display:flex; align-items:center; justify-content:center; }
-    canvas{ width:100% !important; height:100% !important; }
-
-    .stat{ display:flex; gap:8px; align-items:baseline; }
-    .big{ font-weight:800; font-size:1.6rem; }
-    .muted{ color:#6b7280; }
-
-    .controls{ display:flex; gap:8px; flex-wrap:wrap; }
-    .endpoint-pill{ max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-
-    .mini-card{ padding:12px; border-radius:12px; background:linear-gradient(180deg,#ffffff,#fbfdff); box-shadow:0 6px 18px rgba(12,35,63,0.04); }
-
-    .sparkline{ height:72px; }
-
-    footer{ margin-top:16px; text-align:center; color:#475569; font-size:0.9rem; }
+    body{ margin:0; padding:20px; font-family: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, Arial; background:linear-gradient(180deg,#f5f9ff 0,#ffffff 60%); color:#0b2540 }
+    .app-shell{ max-width:1100px; margin:10px auto }
+    .logo{ width:44px; height:44px; border-radius:8px; display:flex; align-items:center; justify-content:center; font-weight:700; background:linear-gradient(135deg,#3b82f6,#06b6d4); color:white }
+    .card-modern{ border:0; border-radius:var(--card-radius); box-shadow:0 10px 25px rgba(12,35,63,0.06); overflow:hidden }
+    .grid{ display:grid; grid-template-columns: 1fr 360px; gap:18px; align-items:start }
+    @media (max-width:900px){ .grid{ grid-template-columns:1fr } .right-col{ order:2 } }
+    .chart-area{ padding:16px; border-radius:10px; background:linear-gradient(180deg,#ffffff,#fbfdff) }
+    .chart-box{ width:100%; height:360px; display:flex; align-items:center; justify-content:center }
+    canvas{ width:100% !important; height:100% !important }
+    .mini-card{ padding:12px; border-radius:10px; background:#fff; box-shadow:0 6px 18px rgba(12,35,63,0.04); }
+    pre#log{ background:transparent; border:0; margin:0; }
   </style>
 </head>
 <body>
   <div class="app-shell">
-    <div class="topbar">
-      <div class="brand">
-        <div class="logo">V</div>
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <div class="d-flex align-items-center gap-3">
+        <div class="logo">D</div>
         <div>
-          <div style="font-weight:700; font-size:1.1rem">Leitura de Tensão</div>
-          <div class="muted" style="font-size:0.85rem">ESP8266 — Interface bonita e responsiva</div>
+          <div style="font-weight:700;">Leitura DHT (ESP8266)</div>
+          <div style="font-size:0.85rem;color:#6b7280">Temperatura + Umidade — UI atualizada</div>
         </div>
       </div>
 
-      <div class="d-flex gap-2 align-items-center">
+      <div class="d-flex align-items-center gap-2">
         <div class="text-end me-2">
-          <div class="muted" style="font-size:0.8rem">Status</div>
+          <div style="font-size:0.8rem;color:#6b7280">Status</div>
           <div id="connBadge" class="badge bg-secondary">Iniciando</div>
         </div>
         <div>
@@ -79,23 +55,26 @@
           <div class="chart-area">
             <div class="d-flex justify-content-between align-items-center mb-2">
               <div>
-                <div class="muted" style="font-size:0.85rem">Tensão (V)</div>
-                <div class="stat"><div id="displayValue" class="big">— V</div><div class="muted ms-2">Última leitura</div></div>
+                <div style="font-size:0.85rem;color:#6b7280">Temperatura / Umidade</div>
+                <div class="d-flex align-items-baseline gap-2">
+                  <div id="displayTemp" style="font-weight:800;font-size:1.5rem">— °C</div>
+                  <div id="displayHum" style="font-size:1rem;color:#6b7280">— %</div>
+                  <div style="font-size:0.85rem;color:#6b7280;margin-left:8px">Última leitura</div>
+                </div>
               </div>
-
               <div class="text-end">
-                <div class="muted" style="font-size:0.85rem">Atualizado</div>
-                <div id="displayTime" class="muted">—</div>
+                <div style="font-size:0.85rem;color:#6b7280">Atualizado</div>
+                <div id="displayTime" style="color:#6b7280">—</div>
               </div>
             </div>
 
             <div class="chart-box mini-card">
-              <canvas id="mainChart" aria-label="Gráfico de tensão" role="img"></canvas>
+              <canvas id="mainChart" aria-label="Gráfico de temperatura e umidade" role="img"></canvas>
             </div>
 
-            <div class="d-flex justify-content-between align-items-center mt-3">
-              <div class="muted">Histórico: <small id="pointsCount">0</small> pontos</div>
-              <div class="muted">Mín: <strong id="minVal">—</strong> — Máx: <strong id="maxVal">—</strong> — Média: <strong id="avgVal">—</strong></div>
+            <div class="d-flex justify-content-between align-items-center mt-3" style="font-size:0.9rem;color:#6b7280">
+              <div>Histórico: <span id="pointsCount">0</span> pontos</div>
+              <div>Mín/TMáx/Média (Temp): <strong id="minVal">—</strong> / <strong id="maxVal">—</strong> / <strong id="avgVal">—</strong></div>
             </div>
           </div>
 
@@ -104,47 +83,47 @@
             <div class="mini-card mb-3">
               <div class="d-flex justify-content-between align-items-start">
                 <div>
-                  <div class="muted" style="font-size:0.85rem">Endpoint</div>
-                  <div class="endpoint-pill" style="font-weight:600;"> <span id="endpointLabel">http://192.168.137.1/Arduino/get_ultimo.php</span></div>
+                  <div style="font-size:0.85rem;color:#6b7280">Endpoint</div>
+                  <div style="font-weight:600;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" id="endpointLabel">http://192.168.137.141/Arduino/get_ultimo.php</div>
                 </div>
                 <div class="d-flex flex-column align-items-end">
                   <div class="d-flex gap-1">
                     <button id="btnCopy" class="btn btn-sm btn-outline-secondary" title="Copiar endpoint"><i class="bi bi-clipboard"></i></button>
                     <button id="btnEdit" class="btn btn-sm btn-outline-secondary" title="Editar endpoint"><i class="bi bi-pencil"></i></button>
                   </div>
-                  <small class="muted mt-2">Salva em localStorage</small>
+                  <small style="color:#6b7280;margin-top:6px">Salva em localStorage</small>
                 </div>
               </div>
 
               <hr>
 
               <div class="d-grid gap-2">
-                <div class="controls">
+                <div class="d-flex gap-2">
                   <button id="btnToggle" class="btn btn-primary btn-sm"><i class="bi bi-pause-fill me-1"></i><span id="btnToggleText">Pausar</span></button>
                   <button id="btnRetry" class="btn btn-outline-primary btn-sm"><i class="bi bi-arrow-repeat me-1"></i>Forçar leitura</button>
                   <button id="btnClear" class="btn btn-outline-secondary btn-sm"><i class="bi bi-trash me-1"></i>Limpar</button>
                 </div>
 
                 <div>
-                  <label class="form-label small muted mb-1">Intervalo (ms)</label>
+                  <label class="form-label small" style="color:#6b7280">Intervalo (ms)</label>
                   <input id="intervalInput" type="number" class="form-control form-control-sm" min="500" step="100" />
                 </div>
 
                 <div>
-                  <label class="form-label small muted mb-1">Máx pontos no gráfico</label>
+                  <label class="form-label small" style="color:#6b7280">Máx pontos no gráfico</label>
                   <input id="maxPointsInput" type="number" class="form-control form-control-sm" min="4" max="240" />
                 </div>
 
                 <div class="d-flex gap-2 align-items-center">
                   <div style="flex:1">
-                    <label class="form-label small muted mb-1">Fallback em erro</label>
+                    <label class="form-label small" style="color:#6b7280">Fallback em erro</label>
                     <select id="fallbackSelect" class="form-select form-select-sm">
                       <option value="off">Desligado</option>
                       <option value="random">Inserir valor random</option>
                     </select>
                   </div>
                   <div style="width:120px">
-                    <label class="form-label small muted mb-1">Tentativas até offline</label>
+                    <label class="form-label small" style="color:#6b7280">Tentativas até offline</label>
                     <input id="failsInput" type="number" class="form-control form-control-sm" min="1" max="10" />
                   </div>
                 </div>
@@ -154,31 +133,30 @@
 
             <div class="mini-card mb-3">
               <div class="d-flex justify-content-between align-items-center mb-2">
-                <div class="muted" style="font-size:0.85rem">Resumo rápido</div>
-                <div class="muted" style="font-size:0.85rem">Últimos <span id="summaryCount">0</span></div>
+                <div style="color:#6b7280">Resumo rápido</div>
+                <div style="color:#6b7280">Últimos <span id="summaryCount">0</span></div>
               </div>
 
               <div class="d-flex flex-column gap-2">
-                <div class="d-flex justify-content-between"><div class="muted">Último</div><div id="summaryLast">— V</div></div>
-                <div class="d-flex justify-content-between"><div class="muted">Min</div><div id="summaryMin">—</div></div>
-                <div class="d-flex justify-content-between"><div class="muted">Max</div><div id="summaryMax">—</div></div>
-                <div class="d-flex justify-content-between"><div class="muted">Média</div><div id="summaryAvg">—</div></div>
+                <div class="d-flex justify-content-between"><div style="color:#6b7280">Último (Temp)</div><div id="summaryLast">— °C</div></div>
+                <div class="d-flex justify-content-between"><div style="color:#6b7280">Min</div><div id="summaryMin">—</div></div>
+                <div class="d-flex justify-content-between"><div style="color:#6b7280">Max</div><div id="summaryMax">—</div></div>
+                <div class="d-flex justify-content-between"><div style="color:#6b7280">Média</div><div id="summaryAvg">—</div></div>
               </div>
 
               <hr>
-
-              <div class="muted" style="font-size:0.85rem">Sparkline</div>
-              <div class="sparkline"><canvas id="sparkChart"></canvas></div>
+              <div style="color:#6b7280">Sparkline (Temp)</div>
+              <div style="height:72px"><canvas id="sparkChart"></canvas></div>
             </div>
 
             <div class="mini-card mb-2">
-              <div class="muted" style="font-size:0.85rem">Logs</div>
-              <pre id="log" style="height:120px; overflow:auto; margin:0; background:transparent; border:0; font-size:0.8rem;">Iniciando...</pre>
+              <div style="color:#6b7280">Logs</div>
+              <pre id="log" style="height:120px; overflow:auto; margin:0; font-size:0.8rem;">Iniciando...</pre>
             </div>
           </div>
         </div>
 
-        <footer>Feito com ❤️ — toque em "Configurações" para personalizar o endpoint e comportamento.</footer>
+        <footer style="margin-top:16px;text-align:center;color:#475569;font-size:0.9rem">Feito com ❤️ — toque em "Configurações" para personalizar o endpoint e comportamento.</footer>
       </div>
     </div>
   </div>
@@ -193,7 +171,7 @@
         </div>
         <div class="modal-body">
           <div class="mb-3">
-            <label class="form-label">Endpoint do ESP</label>
+            <label class="form-label">Endpoint do ESP (get_ultimo.php)</label>
             <input id="modalEndpoint" class="form-control" placeholder="http://192.168.x.x/Arduino/get_ultimo.php" />
           </div>
           <div class="mb-3">
@@ -204,7 +182,7 @@
             <label class="form-label">Usar fallback</label>
             <select id="modalFallback" class="form-select">
               <option value="off">Desligado</option>
-              <option value="random">Random (0..3.3V)</option>
+              <option value="random">Random (Temp/Umid)</option>
             </select>
           </div>
         </div>
@@ -218,22 +196,24 @@
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
   <script>
+  document.addEventListener('DOMContentLoaded', function(){
     // ---------- CONFIG (valores iniciais) ----------
-    const DEFAULT_ENDPOINT = 'http://192.168.137.1/Arduino/get_ultimo.php';
+    const DEFAULT_ENDPOINT = 'http://192.168.137.141/Arduino/get_ultimo.php';
     const DEFAULT_INTERVAL = 4000;
-    const DEFAULT_MAX_POINTS = 6;
+    const DEFAULT_MAX_POINTS = 12;
     const DEFAULT_MAX_FAILS = 3;
 
-    // ---------- Estado ----------
+    // Estado
     let running = true;
     let failCount = 0;
     let offline = false;
-    let readings = []; // {t: Date, v: Number}
+    let readings = []; // {t: Date, temp: Number, hum: Number}
     let timer = null;
 
-    // ---------- Elementos ----------
+    // Elementos
     const endpointLabel = document.getElementById('endpointLabel');
-    const displayValue = document.getElementById('displayValue');
+    const displayTemp = document.getElementById('displayTemp');
+    const displayHum = document.getElementById('displayHum');
     const displayTime = document.getElementById('displayTime');
     const connBadge = document.getElementById('connBadge');
     const logEl = document.getElementById('log');
@@ -280,7 +260,6 @@
         maxFails: s.maxFails || DEFAULT_MAX_FAILS
       };
     }
-
     function saveSettings(settings){ localStorage.setItem('esp_settings', JSON.stringify(settings)); }
 
     let settings = loadSettings();
@@ -290,41 +269,43 @@
     intervalInput.value = settings.interval;
     modalEndpoint.value = settings.endpoint;
     modalInterval.value = settings.interval;
-    fallbackSelect.value = settings.fallback;
     modalFallback.value = settings.fallback;
+    fallbackSelect.value = settings.fallback;
     maxPointsInput.value = settings.maxPoints;
     failsInput.value = settings.maxFails;
 
     // ---------- Chart.js setup ----------
     const mainCtx = document.getElementById('mainChart').getContext('2d');
-    const sparkCtx = document.getElementById('sparkChart').getContext('2d');
 
     function createGradient(ctx){
       const g = ctx.createLinearGradient(0,0,0,400);
-      g.addColorStop(0, 'rgba(59,130,246,0.18)');
-      g.addColorStop(1, 'rgba(59,130,246,0.02)');
+      g.addColorStop(0, 'rgba(255,99,132,0.18)');
+      g.addColorStop(1, 'rgba(255,99,132,0.02)');
       return g;
     }
 
     const mainConfig = {
       type: 'line',
-      data: { labels: [], datasets:[{ label:'Tensão (V)', data:[], fill:true, tension:0.3, pointRadius:4, borderWidth:2 }] },
+      data: { labels: [], datasets:[
+        { label:'Temperatura (°C)', data:[], fill:true, tension:0.3, pointRadius:4, borderWidth:2, yAxisID: 'y_temp', backgroundColor: null, borderColor: 'rgba(255,99,132,1)' },
+        { label:'Umidade (%)', data:[], fill:false, tension:0.3, pointRadius:2, borderWidth:2, yAxisID: 'y_hum', borderColor: 'rgba(54,162,235,1)' }
+      ] },
       options: {
         responsive:true, maintainAspectRatio:false,
         interaction:{mode:'index', intersect:false},
-        plugins:{ legend:{display:false}, tooltip:{callbacks:{label:ctx=> `${ctx.formattedValue} V`}}},
-        scales:{ x:{ display:true, grid:{display:false}}, y:{ beginAtZero:true, suggestedMax:3.6, title:{display:true, text:'Volts'} } }
+        plugins:{ legend:{display:true}, tooltip:{callbacks:{label:ctx=> `${ctx.dataset.label}: ${ctx.formattedValue} ${ctx.dataset.label.includes('Umidade')?'%':'°C'}`}}},
+        scales:{ x:{ display:true, grid:{display:false}}, y_temp:{ position:'left', beginAtZero:true, suggestedMin:0, suggestedMax:50, title:{display:true, text:'°C'} }, y_hum:{ position:'right', beginAtZero:true, suggestedMin:0, suggestedMax:100, grid:{display:false}, title:{display:true, text:'%'} } }
       }
     };
+
     const mainChart = new Chart(mainCtx, mainConfig);
 
+    const sparkCtx = document.getElementById('sparkChart').getContext('2d');
     const sparkConfig = { type:'line', data:{ labels:[], datasets:[{ data:[], fill:false, tension:0.5, pointRadius:0, borderWidth:1 }] }, options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{x:{display:false}, y:{display:false}} } };
     const sparkChart = new Chart(sparkCtx, sparkConfig);
 
-    // update chart visuals gradient after render
     function refreshGradients(){
       mainChart.data.datasets[0].backgroundColor = createGradient(mainCtx);
-      mainChart.data.datasets[0].borderColor = 'rgba(59,130,246,1)';
       mainChart.update('none');
     }
     refreshGradients();
@@ -332,48 +313,49 @@
     // ---------- helpers ----------
     function log(msg){ const now = new Date().toISOString(); logEl.textContent = `[${now}] ${msg}\n` + logEl.textContent; }
 
-    function setBadge(text, variant='secondary'){
-      connBadge.className = 'badge bg-' + variant;
-      connBadge.innerText = text;
-    }
+    function setBadge(text, variant='secondary'){ connBadge.className = 'badge bg-' + variant; connBadge.innerText = text; }
 
-    function statsFromData(arr){
+    function statsFromData(arr, key){
       if(!arr.length) return {min:NaN,max:NaN,avg:NaN,last:NaN};
-      const vals = arr.map(r=>r.v);
+      const vals = arr.map(r=> r[key]);
       const min = Math.min(...vals); const max = Math.max(...vals);
       const avg = vals.reduce((a,b)=>a+b,0)/vals.length;
       return {min,max,avg,last:vals[vals.length-1]};
     }
 
-    function pushReading(v){
+    function pushReading(temp, hum){
       const now = new Date();
-      readings.push({t:now, v: Number(v)});
-      // trim
+      readings.push({t:now, temp: Number(temp), hum: Number(hum)});
       if(readings.length > Number(settings.maxPoints)) readings.shift();
 
       // update charts
       mainChart.data.labels = readings.map(r=> new Date(r.t).toLocaleTimeString());
-      mainChart.data.datasets[0].data = readings.map(r=> r.v);
+      mainChart.data.datasets[0].data = readings.map(r=> r.temp);
+      mainChart.data.datasets[1].data = readings.map(r=> r.hum);
       mainChart.update('active');
 
       sparkChart.data.labels = readings.map((r,i)=>i);
-      sparkChart.data.datasets[0].data = readings.map(r=>r.v);
+      sparkChart.data.datasets[0].data = readings.map(r=> r.temp);
       sparkChart.update('none');
 
-      // update UI summary
-      const s = statsFromData(readings);
-      displayValue.innerText = isNaN(s.last) ? '— V' : s.last.toFixed(2) + ' V';
+      // update UI summary (temperatura)
+      const s = statsFromData(readings, 'temp');
+      displayTemp.innerText = isNaN(s.last) ? '— °C' : s.last.toFixed(1) + ' °C';
+      displayHum.innerText = isNaN(readings[readings.length-1]?.hum) ? '— %' : readings[readings.length-1].hum.toFixed(1) + ' %';
       displayTime.innerText = now.toLocaleString();
       pointsCount.innerText = readings.length;
-      minVal.innerText = isNaN(s.min)?'—': s.min.toFixed(2) + ' V';
-      maxVal.innerText = isNaN(s.max)?'—': s.max.toFixed(2) + ' V';
-      avgVal.innerText = isNaN(s.avg)?'—': s.avg.toFixed(2) + ' V';
+      minVal.innerText = isNaN(s.min)?'—': s.min.toFixed(1)+' °C';
+      maxVal.innerText = isNaN(s.max)?'—': s.max.toFixed(1)+' °C';
+      avgVal.innerText = isNaN(s.avg)?'—': s.avg.toFixed(1)+' °C';
 
+      // resumo
       summaryCount.innerText = readings.length;
-      summaryLast.innerText = isNaN(s.last)?'—': s.last.toFixed(2) + ' V';
-      summaryMin.innerText = isNaN(s.min)?'—': s.min.toFixed(2) + ' V';
-      summaryMax.innerText = isNaN(s.max)?'—': s.max.toFixed(2) + ' V';
-      summaryAvg.innerText = isNaN(s.avg)?'—': s.avg.toFixed(2) + ' V';
+      summaryLast.innerText = isNaN(s.last)?'—': s.last.toFixed(1)+' °C';
+      summaryMin.innerText = isNaN(s.min)?'—': s.min.toFixed(1)+' °C';
+      summaryMax.innerText = isNaN(s.max)?'—': s.max.toFixed(1)+' °C';
+      summaryAvg.innerText = isNaN(s.avg)?'—': s.avg.toFixed(1)+' °C';
+
+      log(`Leitura -> Temp: ${Number(temp).toFixed(1)} °C, Umid: ${Number(hum).toFixed(1)} %`);
     }
 
     // ---------- network ----------
@@ -383,21 +365,29 @@
         const resp = await fetch(url, {cache:'no-store'});
         if(!resp.ok) throw new Error('HTTP ' + resp.status);
         const json = await resp.json();
-        const v = parseFloat(json.tensao ?? json.valor ?? json.voltage ?? json.value);
-        if(isNaN(v)) throw new Error('JSON sem valor numérico');
+
+        // permissive parsing: aceita {temperatura, umidade} ou {temp, hum} ou {valor}
+        const t = parseFloat(json.temperatura ?? json.temp ?? json.t ?? json.valor);
+        const h = parseFloat(json.umidade ?? json.hum ?? json.h ?? json.umidade_percent);
+
+        if(isNaN(t) || isNaN(h)) {
+          // se o JSON não tiver os dois campos, considerar erro
+          throw new Error('JSON sem valores numéricos (temperatura/umidade)');
+        }
+
         failCount = 0; offline = false;
         setBadge('Online','success');
-        log('Leitura: ' + v.toFixed(3) + ' V');
-        pushReading(v);
+        pushReading(t, h);
       }catch(err){
         failCount++;
         log('Erro: ' + (err.message||err));
         setBadge('Erro ('+failCount+')','warning');
 
         if(settings.fallback === 'random'){
-          const fallback = (Math.random()*3.3);
-          log('Inserindo fallback: ' + fallback.toFixed(2) + ' V');
-          pushReading(fallback);
+          const fallbackTemp = (Math.random()*20)+10; // 10..30°C
+          const fallbackHum = (Math.random()*60)+20;  // 20..80%
+          log('Inserindo fallback: ' + fallbackTemp.toFixed(1) + ' °C, ' + fallbackHum.toFixed(1) + ' %');
+          pushReading(fallbackTemp, fallbackHum);
         } else {
           if(failCount >= Number(settings.maxFails)){
             offline = true;
@@ -421,7 +411,7 @@
     });
 
     btnRetry.addEventListener('click', ()=>{ offline=false; failCount=0; setBadge('Tentando','info'); fetchFromESP(); });
-    btnClear.addEventListener('click', ()=>{ readings=[]; mainChart.data.labels=[]; mainChart.data.datasets[0].data=[]; sparkChart.data.labels=[]; sparkChart.data.datasets[0].data=[]; mainChart.update(); sparkChart.update(); displayValue.innerText='— V'; displayTime.innerText='—'; log('Limpo histórico'); });
+    btnClear.addEventListener('click', ()=>{ readings=[]; mainChart.data.labels=[]; mainChart.data.datasets[0].data=[]; mainChart.data.datasets[1].data=[]; sparkChart.data.labels=[]; sparkChart.data.datasets[0].data=[]; mainChart.update(); sparkChart.update(); displayTemp.innerText='— °C'; displayHum.innerText='— %'; displayTime.innerText='—'; log('Limpo histórico'); });
 
     btnCopy.addEventListener('click', async ()=>{ try{ await navigator.clipboard.writeText(settings.endpoint); log('Endpoint copiado para área de transferência'); }catch(e){ log('Não foi possível copiar: '+e); } });
     btnEdit.addEventListener('click', ()=>{ modalEndpoint.value = settings.endpoint; modalInterval.value = settings.interval; modalFallback.value = settings.fallback; editModal.show(); });
@@ -445,9 +435,6 @@
     fallbackSelect.addEventListener('change', ()=>{ settings.fallback = fallbackSelect.value; saveSettings(settings); });
     failsInput.addEventListener('change', ()=>{ settings.maxFails = Number(failsInput.value) || settings.maxFails; saveSettings(settings); });
 
-    // populate modal defaults
-    document.getElementById('endpointLabel').innerText = settings.endpoint;
-
     // iniciar
     setBadge('Iniciando','secondary');
     log('UI inicializada — endpoint: ' + settings.endpoint);
@@ -455,8 +442,8 @@
     // primeira leitura imediata
     fetchFromESP();
 
-    // ajusta gradiente ao redimensionar
     window.addEventListener('resize', ()=>{ refreshGradients(); });
+  });
   </script>
 </body>
 </html>
