@@ -198,7 +198,7 @@
   <script>
   document.addEventListener('DOMContentLoaded', function(){
     // ---------- CONFIG (valores iniciais) ----------
-    const DEFAULT_ENDPOINT = 'http://192.168.137.141/Arduino/get_ultimo.php';
+    const DEFAULT_ENDPOINT = 'http://192.168.137.1/Arduino/get_ultimo.php';
     const DEFAULT_INTERVAL = 4000;
     const DEFAULT_MAX_POINTS = 12;
     const DEFAULT_MAX_FAILS = 3;
@@ -360,43 +360,62 @@
 
     // ---------- network ----------
     async function fetchFromESP(){
-      const url = settings.endpoint + (settings.endpoint.includes('?') ? '&_ts=' + Date.now() : '?_ts=' + Date.now());
-      try{
-        const resp = await fetch(url, {cache:'no-store'});
-        if(!resp.ok) throw new Error('HTTP ' + resp.status);
-        const json = await resp.json();
+  const url = settings.endpoint + (settings.endpoint.includes('?') ? '&_ts=' + Date.now() : '?_ts=' + Date.now());
+  const controller = new AbortController();
+  const timeout = setTimeout(()=> controller.abort(), 7000); // 7s
 
-        // permissive parsing: aceita {temperatura, umidade} ou {temp, hum} ou {valor}
-        const t = parseFloat(json.temperatura ?? json.temp ?? json.t ?? json.valor);
-        const h = parseFloat(json.umidade ?? json.hum ?? json.h ?? json.umidade_percent);
+  try {
+    const resp = await fetch(url, { cache: 'no-store', mode: 'cors', signal: controller.signal });
+    clearTimeout(timeout);
 
-        if(isNaN(t) || isNaN(h)) {
-          // se o JSON não tiver os dois campos, considerar erro
-          throw new Error('JSON sem valores numéricos (temperatura/umidade)');
-        }
+    if (!resp.ok) {
+      const txt = await resp.text().catch(()=>'<no-body>');
+      log('HTTP ' + resp.status + ' - body: ' + txt);
+      throw new Error('HTTP ' + resp.status);
+    }
 
-        failCount = 0; offline = false;
-        setBadge('Online','success');
-        pushReading(t, h);
-      }catch(err){
-        failCount++;
-        log('Erro: ' + (err.message||err));
-        setBadge('Erro ('+failCount+')','warning');
+    let json;
+    try {
+      json = await resp.json();
+    } catch (e) {
+      const body = await resp.text().catch(()=>'<no-body>');
+      log('Resposta não-JSON: ' + body);
+      throw new Error('Resposta não-JSON');
+    }
 
-        if(settings.fallback === 'random'){
-          const fallbackTemp = (Math.random()*20)+10; // 10..30°C
-          const fallbackHum = (Math.random()*60)+20;  // 20..80%
-          log('Inserindo fallback: ' + fallbackTemp.toFixed(1) + ' °C, ' + fallbackHum.toFixed(1) + ' %');
-          pushReading(fallbackTemp, fallbackHum);
-        } else {
-          if(failCount >= Number(settings.maxFails)){
-            offline = true;
-            setBadge('Offline','secondary');
-            log('Marca offline depois de ' + failCount + ' falhas');
-          }
-        }
+    const t = parseFloat(json.temperatura ?? json.temp ?? json.t ?? json.valor);
+    const h = parseFloat(json.umidade ?? json.hum ?? json.h ?? json.umidade);
+
+    if (isNaN(t) || isNaN(h)) throw new Error('JSON sem valores numéricos (t/h)');
+
+    failCount = 0; offline = false;
+    setBadge('Online','success');
+    pushReading(t, h);
+  } catch (err) {
+    clearTimeout(timeout);
+    if (err.name === 'AbortError') {
+      log('Erro: timeout (abort)');
+    } else {
+      log('Erro: ' + (err.message || err));
+    }
+    failCount++;
+    setBadge('Erro ('+failCount+')','warning');
+
+    if (settings.fallback === 'random') {
+      const fallbackTemp = (Math.random()*20)+10;
+      const fallbackHum = (Math.random()*60)+20;
+      log('Inserindo fallback: ' + fallbackTemp.toFixed(1) + ' °C, ' + fallbackHum.toFixed(1) + ' %');
+      pushReading(fallbackTemp, fallbackHum);
+    } else {
+      if (failCount >= Number(settings.maxFails)) {
+        offline = true;
+        setBadge('Offline','secondary');
+        log('Marca offline depois de ' + failCount + ' falhas');
       }
     }
+  }
+}
+
 
     function startLoop(){
       if(timer) clearInterval(timer);

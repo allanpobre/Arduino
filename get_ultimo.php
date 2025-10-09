@@ -1,28 +1,46 @@
 <?php
-header('Content-Type: application/json');
+// get_ultimo.php - versão robusta para depuração e CORS
+header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
+header('Access-Control-Allow-Methods: GET, OPTIONS');
+header('Access-Control-Allow-Headers: Content-Type, Accept');
 
-$conn = new mysqli("localhost", "root", "", "esp_monitor");
-if ($conn->connect_errno) {
-    http_response_code(500);
-    echo json_encode(["status"=>"erro","mensagem"=>"Falha DB: ".$conn->connect_error]);
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    http_response_code(204);
     exit;
 }
-$res = $conn->query("SELECT temperatura, umidade, datahora FROM dht ORDER BY id DESC LIMIT 1");
-if (!$res) {
+
+$host = 'localhost';
+$user = 'root';
+$pass = '';
+$db   = 'esp_monitor';
+
+$conn = @new mysqli($host, $user, $pass, $db);
+if ($conn->connect_errno) {
     http_response_code(500);
-    echo json_encode(["status"=>"erro","mensagem"=>$conn->error]);
+    error_log("get_ultimo.php - DB connect error: ".$conn->connect_error);
+    echo json_encode(['status'=>'erro','mensagem'=>'Falha conexao DB']);
+    exit;
+}
+
+if (!$res = $conn->query("SELECT temperatura, umidade, datahora FROM dht ORDER BY id DESC LIMIT 1")) {
+    http_response_code(500);
+    error_log("get_ultimo.php - Query error: ".$conn->error);
+    echo json_encode(['status'=>'erro','mensagem'=>'Erro na query']);
     $conn->close();
     exit;
 }
+
 $row = $res->fetch_assoc();
 if (!$row) {
-    echo json_encode(["status"=>"ok","mensagem"=>"sem dados"]);
+    echo json_encode(['status'=>'ok','mensagem'=>'sem dados']);
 } else {
+    // padroniza nomes
     echo json_encode([
-      "temperatura" => floatval($row['temperatura']),
-      "umidade" => floatval($row['umidade']),
-      "datahora" => $row['datahora']
+        'status' => 'ok',
+        'temperatura' => floatval($row['temperatura']),
+        'umidade' => floatval($row['umidade']),
+        'datahora' => $row['datahora']
     ]);
 }
 $conn->close();
