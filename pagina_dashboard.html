@@ -23,7 +23,6 @@
     canvas{ width:100% !important; height:100% !important }
     .mini-card{ padding:12px; border-radius:10px; background:#fff; box-shadow:0 6px 18px rgba(12,35,63,0.04); }
     pre#log{ background:transparent; border:0; margin:0; height:240px; overflow:auto; font-size:0.8rem; }
-    /* Ajustes para abas */
     .nav-tabs .nav-link { color: #6b7280; }
     .nav-tabs .nav-link.active { color: #0b2540; font-weight: 600; }
   </style>
@@ -142,9 +141,7 @@
               <div class="tab-pane fade" id="tab-logs" role="tabpanel">
                 <pre id="log">Iniciando...</pre>
               </div>
-
             </div>
-            
           </div>
         </div>
 
@@ -166,6 +163,7 @@
               <button class="nav-link active" id="nav-con-tab" data-bs-toggle="tab" data-bs-target="#nav-con" type="button" role="tab">Conexão</button>
               <button class="nav-link" id="nav-esp-tab" data-bs-toggle="tab" data-bs-target="#nav-esp" type="button" role="tab">ESP8266</button>
               <button class="nav-link" id="nav-dash-tab" data-bs-toggle="tab" data-bs-target="#nav-dash" type="button" role="tab">Dashboard</button>
+              <button class="nav-link" id="nav-notify-tab" data-bs-toggle="tab" data-bs-target="#nav-notify" type="button" role="tab">Notificações</button>
             </div>
           </nav>
           <div class="tab-content p-3 border border-top-0 rounded-bottom" id="nav-tabContent-modal">
@@ -211,6 +209,38 @@
               </div>
             </div>
 
+            <div class="tab-pane fade" id="nav-notify" role="tabpanel">
+              <div class="form-check form-switch mb-3">
+                <input class="form-check-input" type="checkbox" id="modalNotifyEnabled" value="1">
+                <label class="form-check-label" for="modalNotifyEnabled">Ativar notificações WhatsApp (CallMeBot)</label>
+              </div>
+              <div class="mb-3">
+                <label class="form-label">Telefone (ex: +5511...)</label>
+                <input id="modalNotifyPhone" class="form-control" placeholder="+55119..." />
+              </div>
+              <div class="mb-3">
+                <label class="form-label">API Key (CallMeBot)</label>
+                <input id="modalNotifyApikey" class="form-control" />
+              </div>
+              <div class="mb-3">
+                <label class="form-label">Template da Mensagem</label>
+                <textarea id="modalNotifyTemplate" class="form-control" rows="2"></textarea>
+                <div class="form-text">Placeholders: {temp}, {hum}, {datahora}, {id}</div>
+              </div>
+              <div class="row">
+                <div class="col-md-6 mb-3">
+                  <label class="form-label">Notificar temp ≥</label>
+                  <input id="modalNotifyTempAbove" type="number" step="0.1" class="form-control" placeholder="Opcional" />
+                </div>
+                <div class="col-md-6 mb-3">
+                  <label class="form-label">Notificar hum ≥</label>
+                  <input id="modalNotifyHumAbove" type="number" step="0.1" class="form-control" placeholder="Opcional" />
+                </div>
+              </div>
+              <button type="button" id="btnTestNotify" class="btn btn-outline-success btn-sm">Testar Envio</button>
+              <div id="notifyTestResult" class="mt-2" style="font-size: 0.85rem;"></div>
+            </div>
+
           </div>
         </div>
         <div class="modal-footer">
@@ -225,29 +255,30 @@
   <script>
   document.addEventListener('DOMContentLoaded', function(){
     // ---------- CONFIG (valores iniciais) ----------
-    const DEFAULT_ENDPOINT = 'http://192.168.137.78/status'; // ajuste para o IP do ESP (default espera /status)
+    const DEFAULT_ENDPOINT = 'http://192.168.137.78/status';
     const DEFAULT_INTERVAL = 4000;
     const DEFAULT_MAX_POINTS = 12;
     const DEFAULT_MAX_FAILS = 3;
     const DEFAULT_TEMP_THRESHOLD = 2.0;
     const DEFAULT_HUM_THRESHOLD = 10.0;
+    // NOVO: URL base da API de notificação (assume estar no mesmo servidor)
+    let NOTIFY_API_URL = ''; 
 
     // Estado
     let running = true;
     let failCount = 0;
     let offline = false;
-    let readings = []; // {t: Date, temp: Number, hum: Number}
+    let readings = [];
     let timer = null;
 
-    // Elementos
+    // Elementos (Dashboard)
     const endpointLabel = document.getElementById('endpointLabel');
     const displayTemp = document.getElementById('displayTemp');
     const displayHum = document.getElementById('displayHum');
     const displayTime = document.getElementById('displayTime');
-    const displaySaved = document.getElementById('displaySaved'); // NOVO
+    const displaySaved = document.getElementById('displaySaved');
     const connBadge = document.getElementById('connBadge');
     const logEl = document.getElementById('log');
-
     const btnToggle = document.getElementById('btnToggle');
     const btnToggleText = document.getElementById('btnToggleText');
     const btnRetry = document.getElementById('btnRetry');
@@ -255,34 +286,36 @@
     const btnCopy = document.getElementById('btnCopy');
     const btnEdit = document.getElementById('btnEdit');
     const btnSettings = document.getElementById('btnSettings');
-
-    // Removido inputs da UI principal
-    // const intervalInput = document.getElementById('intervalInput');
-    // const maxPointsInput = document.getElementById('maxPointsInput');
-    // const fallbackSelect = document.getElementById('fallbackSelect');
-    // const failsInput = document.getElementById('failsInput');
-
     const summaryCount = document.getElementById('summaryCount');
     const summaryLast = document.getElementById('summaryLast');
     const summaryMin = document.getElementById('summaryMin');
     const summaryMax = document.getElementById('summaryMax');
     const summaryAvg = document.getElementById('summaryAvg');
-
     const pointsCount = document.getElementById('pointsCount');
     const minVal = document.getElementById('minVal');
     const maxVal = document.getElementById('maxVal');
     const avgVal = document.getElementById('avgVal');
 
-    // Modal elements (ATUALIZADO)
+    // Elementos (Modal)
     const editModal = new bootstrap.Modal(document.getElementById('editModal'));
     const modalEndpoint = document.getElementById('modalEndpoint');
     const modalInterval = document.getElementById('modalInterval');
     const modalFallback = document.getElementById('modalFallback');
     const modalTempThreshold = document.getElementById('modalTempThreshold');
     const modalHumThreshold = document.getElementById('modalHumThreshold');
-    const modalMaxPoints = document.getElementById('modalMaxPoints'); // NOVO
-    const modalMaxFails = document.getElementById('modalMaxFails'); // NOVO
+    const modalMaxPoints = document.getElementById('modalMaxPoints');
+    const modalMaxFails = document.getElementById('modalMaxFails');
     const modalSave = document.getElementById('modalSave');
+
+    // NOVO: Elementos (Modal de Notificação)
+    const modalNotifyEnabled = document.getElementById('modalNotifyEnabled');
+    const modalNotifyPhone = document.getElementById('modalNotifyPhone');
+    const modalNotifyApikey = document.getElementById('modalNotifyApikey');
+    const modalNotifyTemplate = document.getElementById('modalNotifyTemplate');
+    const modalNotifyTempAbove = document.getElementById('modalNotifyTempAbove');
+    const modalNotifyHumAbove = document.getElementById('modalNotifyHumAbove');
+    const btnTestNotify = document.getElementById('btnTestNotify');
+    const notifyTestResult = document.getElementById('notifyTestResult');
 
     // load settings from localStorage
     function loadSettings(){
@@ -301,7 +334,7 @@
 
     let settings = loadSettings();
 
-    // UI populate (ATUALIZADO)
+    // UI populate
     function populateUI(){
       endpointLabel.innerText = settings.endpoint;
       modalEndpoint.value = settings.endpoint;
@@ -311,19 +344,31 @@
       modalMaxFails.value = settings.maxFails;
       modalTempThreshold.value = settings.tempThreshold;
       modalHumThreshold.value = settings.humThreshold;
+      
+      // NOVO: Define a URL da API de notificação (baseado no endpoint)
+      try {
+        const urlObj = new URL(settings.endpoint);
+        const base = urlObj.origin; // http://192.168.x.x
+        // Assume que a API está na raiz do servidor, ou ajuste o caminho
+        NOTIFY_API_URL = `${base}/notify_admin.php`; 
+        // Se estiver na mesma subpasta (ex: /Arduino/):
+        // const path = urlObj.pathname.substring(0, urlObj.pathname.lastIndexOf('/'));
+        // NOTIFY_API_URL = `${base}${path}/notify_admin.php`;
+        log('URL da API de Notificação: ' + NOTIFY_API_URL);
+      } catch (e) {
+        log('Endpoint inválido, não foi possível definir URL da API de Notificação');
+      }
     }
     populateUI();
 
     // ---------- Chart.js setup ----------
     const mainCtx = document.getElementById('mainChart').getContext('2d');
-
     function createGradient(ctx){
       const g = ctx.createLinearGradient(0,0,0,400);
       g.addColorStop(0, 'rgba(255,99,132,0.18)');
       g.addColorStop(1, 'rgba(255,99,132,0.02)');
       return g;
     }
-
     const mainConfig = {
       type: 'line',
       data: { labels: [], datasets:[
@@ -337,24 +382,16 @@
         scales:{ x:{ display:true, grid:{display:false}}, y_temp:{ position:'left', beginAtZero:true, suggestedMin:0, suggestedMax:50, title:{display:true, text:'°C'} }, y_hum:{ position:'right', beginAtZero:true, suggestedMin:0, suggestedMax:100, grid:{display:false}, title:{display:true, text:'%'} } }
       }
     };
-
     const mainChart = new Chart(mainCtx, mainConfig);
-
     const sparkCtx = document.getElementById('sparkChart').getContext('2d');
     const sparkConfig = { type:'line', data:{ labels:[], datasets:[{ data:[], fill:false, tension:0.5, pointRadius:0, borderWidth:1 }] }, options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{x:{display:false}, y:{display:false}} } };
     const sparkChart = new Chart(sparkCtx, sparkConfig);
-
-    function refreshGradients(){
-      mainChart.data.datasets[0].backgroundColor = createGradient(mainCtx);
-      mainChart.update('none');
-    }
+    function refreshGradients(){ mainChart.data.datasets[0].backgroundColor = createGradient(mainCtx); mainChart.update('none'); }
     refreshGradients();
 
     // ---------- helpers ----------
     function log(msg){ const now = new Date().toLocaleTimeString(); logEl.textContent = `[${now}] ${msg}\n` + logEl.textContent; }
-
     function setBadge(text, variant='secondary'){ connBadge.className = 'badge bg-' + variant; connBadge.innerText = text; }
-
     function statsFromData(arr, key){
       if(!arr.length) return {min:NaN,max:NaN,avg:NaN,last:NaN};
       const vals = arr.map(r=> r[key]);
@@ -363,29 +400,24 @@
       return {min,max,avg,last:vals[vals.length-1]};
     }
 
-    // ATUALIZADO: PUSH READING
     function pushReading(temp, hum, savedTemp, savedHum){
       const now = new Date();
       readings.push({t:now, temp: Number(temp), hum: Number(hum)});
       if(readings.length > Number(settings.maxPoints)) readings.shift();
 
-      // update charts
       mainChart.data.labels = readings.map(r=> new Date(r.t).toLocaleTimeString());
       mainChart.data.datasets[0].data = readings.map(r=> r.temp);
       mainChart.data.datasets[1].data = readings.map(r=> r.hum);
       mainChart.update('active');
-
       sparkChart.data.labels = readings.map((r,i)=>i);
       sparkChart.data.datasets[0].data = readings.map(r=> r.temp);
       sparkChart.update('none');
 
-      // update UI summary (temperatura)
       const s = statsFromData(readings, 'temp');
       displayTemp.innerText = isNaN(s.last) ? '— °C' : s.last.toFixed(1) + ' °C';
       displayHum.innerText = isNaN(readings[readings.length-1]?.hum) ? '— %' : readings[readings.length-1].hum.toFixed(1) + ' %';
       displayTime.innerText = now.toLocaleString();
       
-      // NOVO: Atualiza display 'saved'
       if (savedTemp !== undefined && !isNaN(savedTemp)){
         displaySaved.innerHTML = `<i class="bi bi-database-check"></i> Último salvo: <strong>${Number(savedTemp).toFixed(1)} °C</strong> / <strong>${Number(savedHum).toFixed(1)} %</strong>`;
       } else {
@@ -396,8 +428,6 @@
       minVal.innerText = isNaN(s.min)?'—': s.min.toFixed(1)+' °C';
       maxVal.innerText = isNaN(s.max)?'—': s.max.toFixed(1)+' °C';
       avgVal.innerText = isNaN(s.avg)?'—': s.avg.toFixed(1)+' °C';
-
-      // resumo
       summaryCount.innerText = readings.length;
       summaryLast.innerText = isNaN(s.last)?'—': s.last.toFixed(1)+' °C';
       summaryMin.innerText = isNaN(s.min)?'—': s.min.toFixed(1)+' °C';
@@ -407,36 +437,22 @@
       log(`Leitura -> Temp: ${Number(temp).toFixed(1)} °C, Umid: ${Number(hum).toFixed(1)} %`);
     }
 
-    // ---------- network (ATUALIZADO) ----------
+    // ---------- network (leitura) ----------
     async function fetchFromESP(){
       const url = settings.endpoint + (settings.endpoint.includes('?') ? '&_ts=' + Date.now() : '?_ts=' + Date.now());
       const controller = new AbortController();
-      const timeout = setTimeout(()=> controller.abort(), 7000); // 7s
+      const timeout = setTimeout(()=> controller.abort(), 7000);
 
       try {
         const resp = await fetch(url, { cache: 'no-store', mode: 'cors', signal: controller.signal });
         clearTimeout(timeout);
-
-        if (!resp.ok) {
-          const txt = await resp.text().catch(()=>'<no-body>');
-          log('HTTP ' + resp.status + ' - body: ' + txt);
-          throw new Error('HTTP ' + resp.status);
-        }
+        if (!resp.ok) { const txt = await resp.text().catch(()=>'<no-body>'); throw new Error('HTTP ' + resp.status + ': ' + txt); }
 
         let json;
-        try {
-          json = await resp.json();
-        } catch (e) {
-          const body = await resp.text().catch(()=>'<no-body>');
-          log('Resposta não-JSON: ' + body);
-          throw new Error('Resposta não-JSON');
-        }
+        try { json = await resp.json(); } catch (e) { throw new Error('Resposta não-JSON'); }
 
-        // Tenta ler 'temperatura' (padrão) ou 'latestTemp' (do /status do ESP)
         const t = parseFloat(json.temperatura ?? json.latestTemp ?? json.temp ?? json.t ?? json.valor);
         const h = parseFloat(json.umidade ?? json.latestHum ?? json.hum ?? json.h ?? json.umidade);
-        
-        // NOVO: Tenta ler os campos 'saved'
         const st = parseFloat(json.saved_temp ?? NaN);
         const sh = parseFloat(json.saved_hum ?? NaN);
 
@@ -444,14 +460,10 @@
 
         failCount = 0; offline = false;
         setBadge('Online','success');
-        pushReading(t, h, st, sh); // Passa os novos valores
+        pushReading(t, h, st, sh);
       } catch (err) {
         clearTimeout(timeout);
-        if (err.name === 'AbortError') {
-          log('Erro: timeout (abort)');
-        } else {
-          log('Erro: ' + (err.message || err));
-        }
+        log('Erro: ' + (err.message || err));
         failCount++;
         setBadge('Erro ('+failCount+')','warning');
 
@@ -459,7 +471,7 @@
           const fallbackTemp = (Math.random()*20)+10;
           const fallbackHum = (Math.random()*60)+20;
           log('Inserindo fallback: ' + fallbackTemp.toFixed(1) + ' °C, ' + fallbackHum.toFixed(1) + ' %');
-          pushReading(fallbackTemp, fallbackHum, NaN, NaN); // Fallback não tem 'saved'
+          pushReading(fallbackTemp, fallbackHum, NaN, NaN);
         } else {
           if (failCount >= Number(settings.maxFails)) {
             offline = true;
@@ -469,10 +481,62 @@
         }
       }
     }
-
     function startLoop(){
       if(timer) clearInterval(timer);
       timer = setInterval(()=>{ if(running && !offline) fetchFromESP(); }, Number(settings.interval));
+    }
+
+    // ---------- NOVO: Funções da API de Notificação ----------
+    async function loadNotificationSettings() {
+      const url = `${NOTIFY_API_URL}?action=load&_ts=${Date.now()}`;
+      notifyTestResult.innerHTML = '';
+      try {
+        log('Carregando config de notificação...');
+        const resp = await fetch(url);
+        const json = await resp.json();
+        if (!resp.ok) throw new Error(json.mensagem || 'HTTP ' + resp.status);
+        
+        if (json.status === 'ok' && json.config) {
+          const cfg = json.config;
+          modalNotifyEnabled.checked = cfg.enabled;
+          modalNotifyPhone.value = cfg.phone || '';
+          modalNotifyApikey.value = cfg.apikey || '';
+          modalNotifyTemplate.value = cfg.template || '';
+          modalNotifyTempAbove.value = cfg.notify_temp_above || '';
+          modalNotifyHumAbove.value = cfg.notify_hum_above || '';
+          log('Config de notificação carregada.');
+        } else {
+          throw new Error(json.mensagem || 'Resposta inválida');
+        }
+      } catch (e) {
+        log('Erro ao carregar config de notificação: ' + e.message);
+        notifyTestResult.innerHTML = `<div class="alert alert-danger p-2">Falha ao carregar config: ${e.message}</div>`;
+      }
+    }
+
+    async function saveNotificationSettings() {
+      const url = `${NOTIFY_API_URL}?action=save`;
+      
+      const formData = new FormData();
+      formData.append('enabled', modalNotifyEnabled.checked ? '1' : '0');
+      formData.append('phone', modalNotifyPhone.value);
+      formData.append('apikey', modalNotifyApikey.value);
+      formData.append('template', modalNotifyTemplate.value);
+      formData.append('notify_temp_above', modalNotifyTempAbove.value);
+      formData.append('notify_hum_above', modalNotifyHumAbove.value);
+      
+      try {
+        log('Salvando config de notificação...');
+        const resp = await fetch(url, { method: 'POST', body: formData });
+        const json = await resp.json();
+        if (!resp.ok) throw new Error(json.mensagem || 'Erro HTTP ' + resp.status);
+        
+        log('Config de notificação salva: ' + json.mensagem);
+        return true;
+      } catch (e) {
+        log('Erro ao salvar config de notificação: ' + e.message);
+        return false;
+      }
     }
 
     // ---------- UI actions (ATUALIZADO) ----------
@@ -484,14 +548,20 @@
 
     btnRetry.addEventListener('click', ()=>{ offline=false; failCount=0; setBadge('Tentando','info'); fetchFromESP(); });
     btnClear.addEventListener('click', ()=>{ readings=[]; mainChart.data.labels=[]; mainChart.data.datasets[0].data=[]; mainChart.data.datasets[1].data=[]; sparkChart.data.labels=[]; sparkChart.data.datasets[0].data=[]; mainChart.update(); sparkChart.update(); displayTemp.innerText='— °C'; displayHum.innerText='— %'; displayTime.innerText='—'; displaySaved.innerHTML=''; log('Limpo histórico'); });
-
     btnCopy.addEventListener('click', async ()=>{ try{ await navigator.clipboard.writeText(settings.endpoint); log('Endpoint copiado para área de transferência'); }catch(e){ log('Não foi possível copiar: '+e); } });
-    btnEdit.addEventListener('click', ()=>{ populateUI(); editModal.show(); });
-    btnSettings.addEventListener('click', ()=>{ populateUI(); editModal.show(); });
+    
+    // ATUALIZADO: Abrir modal
+    function openSettingsModal(){
+      populateUI(); 
+      loadNotificationSettings(); // Carrega configs de notificação
+      editModal.show();
+    }
+    btnEdit.addEventListener('click', openSettingsModal);
+    btnSettings.addEventListener('click', openSettingsModal);
 
     // ATUALIZADO: Salvar Modal
     modalSave.addEventListener('click', async ()=>{
-      // Salva todas as configurações do modal
+      // Salva configs do Dashboard
       settings.endpoint = modalEndpoint.value || settings.endpoint;
       settings.interval = Number(modalInterval.value) || settings.interval;
       settings.fallback = modalFallback.value || settings.fallback;
@@ -499,16 +569,14 @@
       settings.maxFails = Number(modalMaxFails.value) || settings.maxFails;
       settings.tempThreshold = parseFloat(modalTempThreshold.value) || settings.tempThreshold;
       settings.humThreshold  = parseFloat(modalHumThreshold.value)  || settings.humThreshold;
-
-      // update quick UI
-      endpointLabel.innerText = settings.endpoint;
-      
       saveSettings(settings);
-      log('Configurações salvas (local)');
+      log('Configurações do dashboard salvas (local)');
+      
+      // Atualiza a UI principal
+      populateUI();
 
-      // tenta enviar thresholds para o ESP (/config)
+      // Envia thresholds para o ESP (/config)
       try {
-        // Extrai a base (http://ip:porta) do endpoint principal
         const urlObj = new URL(settings.endpoint);
         const base = urlObj.origin; 
         const configUrl = `${base}/config?temp=${encodeURIComponent(settings.tempThreshold)}&hum=${encodeURIComponent(settings.humThreshold)}`;
@@ -518,35 +586,53 @@
         const timeout = setTimeout(()=> controller.abort(), 5000);
         const resp = await fetch(configUrl, { method: 'GET', mode: 'cors', signal: controller.signal });
         clearTimeout(timeout);
-
-        if (!resp.ok) {
-          const t = await resp.text().catch(()=>'<no body>');
-          log('Falha ao enviar config (HTTP ' + resp.status + '): ' + t);
-        } else {
-          const j = await resp.json().catch(()=>null);
-          log('ESP respondeu config: ' + (j ? JSON.stringify(j) : 'ok'));
-        }
+        if (!resp.ok) { const t = await resp.text().catch(()=>''); throw new Error(t); }
+        const j = await resp.json().catch(()=>null);
+        log('ESP respondeu config: ' + (j ? JSON.stringify(j) : 'ok'));
       } catch (e) {
         log('Não foi possível enviar thresholds para ESP: ' + e);
-        log('Nota: Isso é esperado se o endpoint não for o IP do ESP.');
       }
-
+      
+      // NOVO: Salva as configurações de notificação
+      await saveNotificationSettings();
+      
       startLoop(); // Reinicia o loop com o novo intervalo
     });
 
-    // REMOVIDO: Listeners dos inputs da UI principal
-    // intervalInput.addEventListener('change', ...);
-    // maxPointsInput.addEventListener('change', ...);
-    // fallbackSelect.addEventListener('change', ...);
-    // failsInput.addEventListener('change', ...);
+    // NOVO: Testar Notificação
+    btnTestNotify.addEventListener('click', async () => {
+      const url = `${NOTIFY_API_URL}?action=test`;
+      notifyTestResult.innerHTML = `<div class="alert alert-info p-2">Enviando teste...</div>`;
+
+      const formData = new FormData();
+      formData.append('phone', modalNotifyPhone.value);
+      formData.append('apikey', modalNotifyApikey.value);
+      formData.append('template', modalNotifyTemplate.value);
+      
+      try {
+        const resp = await fetch(url, { method: 'POST', body: formData });
+        const json = await resp.json();
+        if (!resp.ok) throw new Error(json.mensagem || 'Erro HTTP ' + resp.status);
+
+        if (json.ok) {
+          notifyTestResult.innerHTML = `<div class="alert alert-success p-2"><strong>Sucesso!</strong> Resposta: ${json.body || ''}</div>`;
+          log('Teste de notificação OK.');
+        } else {
+          notifyTestResult.innerHTML = `<div class="alert alert-warning p-2"><strong>Falha.</strong> ${json.mensagem || json.error || json.body}</div>`;
+          log('Teste de notificação falhou: ' + (json.mensagem || json.error || json.body));
+        }
+
+      } catch (e) {
+        log('Erro no fetch do teste: ' + e.message);
+        notifyTestResult.innerHTML = `<div class="alert alert-danger p-2">Erro de rede: ${e.message}</div>`;
+      }
+    });
 
     // iniciar
     setBadge('Iniciando','secondary');
     log('UI inicializada — endpoint: ' + settings.endpoint);
     startLoop();
-    // primeira leitura imediata
-    fetchFromESP();
-
+    fetchFromESP(); // primeira leitura imediata
     window.addEventListener('resize', ()=>{ refreshGradients(); });
   });
   </script>

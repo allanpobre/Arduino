@@ -1,4 +1,26 @@
 <?php
+
+
+<?php
+// notify_admin.php - interface para editar notify_config.json + botão "Testar envio"
+// ...
+
+$configFile = __DIR__ . '/notify_config.json';
+// ... (o resto das variáveis)
+
+// carregar config existente (se houver)
+// ... (o código de carregar config)
+
+// --- CORREÇÃO ---
+// Inclui a função de envio centralizada
+require_once __DIR__ . '/notify_function.php';
+// ----------------
+
+// EXCLUA A FUNÇÃO 'send_whatsapp_callmebot' QUE ESTAVA AQUI
+
+// --- Handler AJAX: teste de envio ---
+// ... (o resto do arquivo continua igual)
+
 // salvar_dht.php - versão com opcional notificação WhatsApp (CallMeBot)
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
@@ -21,6 +43,11 @@ $pass = "";
 // configuração do arquivo de notificações
 $notifyConfigFile = __DIR__ . '/notify_config.json';
 
+// --- (APRIMORAMENTO) ---
+// Inclui a função de envio centralizada
+require_once __DIR__ . '/notify_function.php';
+// -----------------------
+
 // conexão com tratamento
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 try {
@@ -32,28 +59,6 @@ try {
     echo json_encode(["status" => "erro", "mensagem" => "Falha na conexão DB: " . $e->getMessage()]);
     exit;
 }
-
-// Função de envio (usada tanto em salvar_dht.php quanto aqui)
-function send_whatsapp_callmebot(string $phone, string $text, string $apikey): array {
-        $url = "https://api.callmebot.com/whatsapp.php?phone=" . urlencode($phone)
-             . "&text=" . urlencode($text)
-             . "&apikey=" . urlencode($apikey);
-    
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, $url);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 8); // timeout curto
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);  // Desabilita a verificação SSL
-        $body = curl_exec($ch);
-        $err = null;
-        if ($body === false) $err = curl_error($ch);
-        $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
-    
-        $ok = ($http_code >= 200 && $http_code < 300 && $err === null);
-        return ['ok' => $ok, 'http_code' => $http_code, 'body' => $body, 'error' => $err];
-    }
 
 // obter parametros (aceita GET ou POST)
 $temp_raw = $_GET['temp'] ?? $_POST['temp'] ?? null;
@@ -122,6 +127,7 @@ try {
                 );
 
                 // envia via CallMeBot
+                // Esta função agora existe porque foi incluída pelo 'require_once' no topo
                 $sendResult = send_whatsapp_callmebot($phone, $message, $apikey);
                 $notified = $sendResult['ok'];
                 $notify_response = $sendResult;
