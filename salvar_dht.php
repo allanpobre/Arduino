@@ -33,6 +33,28 @@ try {
     exit;
 }
 
+// Função de envio (usada tanto em salvar_dht.php quanto aqui)
+function send_whatsapp_callmebot(string $phone, string $text, string $apikey): array {
+        $url = "https://api.callmebot.com/whatsapp.php?phone=" . urlencode($phone)
+             . "&text=" . urlencode($text)
+             . "&apikey=" . urlencode($apikey);
+    
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 8); // timeout curto
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);  // Desabilita a verificação SSL
+        $body = curl_exec($ch);
+        $err = null;
+        if ($body === false) $err = curl_error($ch);
+        $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+    
+        $ok = ($http_code >= 200 && $http_code < 300 && $err === null);
+        return ['ok' => $ok, 'http_code' => $http_code, 'body' => $body, 'error' => $err];
+    }
+
 // obter parametros (aceita GET ou POST)
 $temp_raw = $_GET['temp'] ?? $_POST['temp'] ?? null;
 $hum_raw  = $_GET['hum']  ?? $_POST['hum']  ?? null;

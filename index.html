@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Leitura DHT11 — ESP8266</title>
 
-  <!-- Bootstrap e ícones -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -23,7 +22,10 @@
     .chart-box{ width:100%; height:360px; display:flex; align-items:center; justify-content:center }
     canvas{ width:100% !important; height:100% !important }
     .mini-card{ padding:12px; border-radius:10px; background:#fff; box-shadow:0 6px 18px rgba(12,35,63,0.04); }
-    pre#log{ background:transparent; border:0; margin:0; }
+    pre#log{ background:transparent; border:0; margin:0; height:240px; overflow:auto; font-size:0.8rem; }
+    /* Ajustes para abas */
+    .nav-tabs .nav-link { color: #6b7280; }
+    .nav-tabs .nav-link.active { color: #0b2540; font-weight: 600; }
   </style>
 </head>
 <body>
@@ -43,7 +45,7 @@
           <div id="connBadge" class="badge bg-secondary">Iniciando</div>
         </div>
         <div>
-          <button id="btnSettings" class="btn btn-outline-primary btn-sm" title="Configurações"><i class="bi bi-gear"></i></button>
+          <button id="btnSettings" class="btn btn-primary btn-sm" title="Configurações"><i class="bi bi-gear-fill me-1"></i> Configurar</button>
         </div>
       </div>
     </div>
@@ -51,16 +53,15 @@
     <div class="card card-modern">
       <div class="card-body">
         <div class="grid">
-          <!-- Left: gráfico grande -->
           <div class="chart-area">
             <div class="d-flex justify-content-between align-items-center mb-2">
               <div>
-                <div style="font-size:0.85rem;color:#6b7280">Temperatura / Umidade</div>
+                <div style="font-size:0.85rem;color:#6b7280">Leitura Atual (Live)</div>
                 <div class="d-flex align-items-baseline gap-2">
                   <div id="displayTemp" style="font-weight:800;font-size:1.5rem">— °C</div>
                   <div id="displayHum" style="font-size:1rem;color:#6b7280">— %</div>
-                  <div style="font-size:0.85rem;color:#6b7280;margin-left:8px">Última leitura</div>
                 </div>
+                <div id="displaySaved" class="mt-1" style="font-size:0.9rem; color:#0a58ca; font-weight: 500;"></div>
               </div>
               <div class="text-end">
                 <div style="font-size:0.85rem;color:#6b7280">Atualizado</div>
@@ -73,98 +74,85 @@
             </div>
 
             <div class="d-flex justify-content-between align-items-center mt-3" style="font-size:0.9rem;color:#6b7280">
-              <div>Histórico: <span id="pointsCount">0</span> pontos</div>
+              <div>Histórico (local): <span id="pointsCount">0</span> pontos</div>
               <div>Mín/TMáx/Média (Temp): <strong id="minVal">—</strong> / <strong id="maxVal">—</strong> / <strong id="avgVal">—</strong></div>
             </div>
           </div>
 
-          <!-- Right: controles e resumo -->
           <div class="right-col">
             <div class="mini-card mb-3">
               <div class="d-flex justify-content-between align-items-start">
                 <div>
                   <div class="d-flex align-items-baseline gap-2">
                     <div style="font-size:0.85rem;color:#6b7280">Endpoint</div>
-                    <small class="text-muted ms-2" id="endpointHint">(deve apontar para /status do ESP)</small>
+                    <small class="text-muted ms-2" id="endpointHint">(ESP: /status ou DB: /get_ultimo.php)</small>
                   </div>
-                  <div style="font-weight:600;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" id="endpointLabel">http://192.168.137.141/Arduino/get_ultimo.php</div>
+                  <div style="font-weight:600;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" id="endpointLabel">...</div>
                 </div>
                 <div class="d-flex flex-column align-items-end">
                   <div class="d-flex gap-1">
                     <button id="btnCopy" class="btn btn-sm btn-outline-secondary" title="Copiar endpoint"><i class="bi bi-clipboard"></i></button>
                     <button id="btnEdit" class="btn btn-sm btn-outline-secondary" title="Editar endpoint"><i class="bi bi-pencil"></i></button>
                   </div>
-                  <small style="color:#6b7280;margin-top:6px">Salva em localStorage</small>
                 </div>
               </div>
+            </div>
 
-              <hr>
+            <ul class="nav nav-tabs" id="infoTabs" role="tablist">
+              <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="tab-controles-btn" data-bs-toggle="tab" data-bs-target="#tab-controles" type="button" role="tab">Controles</button>
+              </li>
+              <li class="nav-item" role="presentation">
+                <button class="nav-link" id="tab-resumo-btn" data-bs-toggle="tab" data-bs-target="#tab-resumo" type="button" role="tab">Resumo</button>
+              </li>
+              <li class="nav-item" role="presentation">
+                <button class="nav-link" id="tab-logs-btn" data-bs-toggle="tab" data-bs-target="#tab-logs" type="button" role="tab">Logs</button>
+              </li>
+            </ul>
 
-              <div class="d-grid gap-2">
-                <div class="d-flex gap-2">
-                  <button id="btnToggle" class="btn btn-primary btn-sm"><i class="bi bi-pause-fill me-1"></i><span id="btnToggleText">Pausar</span></button>
-                  <button id="btnRetry" class="btn btn-outline-primary btn-sm"><i class="bi bi-arrow-repeat me-1"></i>Forçar leitura</button>
-                  <button id="btnClear" class="btn btn-outline-secondary btn-sm"><i class="bi bi-trash me-1"></i>Limpar</button>
-                </div>
-
-                <div>
-                  <label class="form-label small" style="color:#6b7280">Intervalo (ms)</label>
-                  <input id="intervalInput" type="number" class="form-control form-control-sm" min="500" step="100" />
-                </div>
-
-                <div>
-                  <label class="form-label small" style="color:#6b7280">Máx pontos no gráfico</label>
-                  <input id="maxPointsInput" type="number" class="form-control form-control-sm" min="4" max="240" />
-                </div>
-
-                <div class="d-flex gap-2 align-items-center">
-                  <div style="flex:1">
-                    <label class="form-label small" style="color:#6b7280">Fallback em erro</label>
-                    <select id="fallbackSelect" class="form-select form-select-sm">
-                      <option value="off">Desligado</option>
-                      <option value="random">Inserir valor random</option>
-                    </select>
+            <div class="tab-content mini-card" id="infoTabsContent" style="border-top-left-radius: 0;">
+              
+              <div class="tab-pane fade show active" id="tab-controles" role="tabpanel">
+                <div class="d-grid gap-2">
+                  <div class="d-flex gap-2">
+                    <button id="btnToggle" class="btn btn-primary btn-sm" style="flex:1"><i class="bi bi-pause-fill me-1"></i><span id="btnToggleText">Pausar</span></button>
+                    <button id="btnRetry" class="btn btn-outline-primary btn-sm"><i class="bi bi-arrow-repeat me-1"></i>Forçar</button>
+                    <button id="btnClear" class="btn btn-outline-secondary btn-sm"><i class="bi bi-trash me-1"></i>Limpar</button>
                   </div>
-                  <div style="width:120px">
-                    <label class="form-label small" style="color:#6b7280">Tentativas até offline</label>
-                    <input id="failsInput" type="number" class="form-control form-control-sm" min="1" max="10" />
-                  </div>
+                  <small class="text-muted text-center">Intervalo, thresholds e outros estão em "Configurar".</small>
                 </div>
-
-              </div>
-            </div>
-
-            <div class="mini-card mb-3">
-              <div class="d-flex justify-content-between align-items-center mb-2">
-                <div style="color:#6b7280">Resumo rápido</div>
-                <div style="color:#6b7280">Últimos <span id="summaryCount">0</span></div>
               </div>
 
-              <div class="d-flex flex-column gap-2">
-                <div class="d-flex justify-content-between"><div style="color:#6b7280">Último (Temp)</div><div id="summaryLast">— °C</div></div>
-                <div class="d-flex justify-content-between"><div style="color:#6b7280">Min</div><div id="summaryMin">—</div></div>
-                <div class="d-flex justify-content-between"><div style="color:#6b7280">Max</div><div id="summaryMax">—</div></div>
-                <div class="d-flex justify-content-between"><div style="color:#6b7280">Média</div><div id="summaryAvg">—</div></div>
+              <div class="tab-pane fade" id="tab-resumo" role="tabpanel">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                  <div style="color:#6b7280">Resumo rápido</div>
+                  <div style="color:#6b7280">Últimos <span id="summaryCount">0</span></div>
+                </div>
+                <div class="d-flex flex-column gap-2">
+                  <div class="d-flex justify-content-between"><div style="color:#6b7280">Último (Temp)</div><div id="summaryLast">— °C</div></div>
+                  <div class="d-flex justify-content-between"><div style="color:#6b7280">Min</div><div id="summaryMin">—</div></div>
+                  <div class="d-flex justify-content-between"><div style="color:#6b7280">Max</div><div id="summaryMax">—</div></div>
+                  <div class="d-flex justify-content-between"><div style="color:#6b7280">Média</div><div id="summaryAvg">—</div></div>
+                </div>
+                <hr>
+                <div style="color:#6b7280">Sparkline (Temp)</div>
+                <div style="height:72px"><canvas id="sparkChart"></canvas></div>
               </div>
 
-              <hr>
-              <div style="color:#6b7280">Sparkline (Temp)</div>
-              <div style="height:72px"><canvas id="sparkChart"></canvas></div>
-            </div>
+              <div class="tab-pane fade" id="tab-logs" role="tabpanel">
+                <pre id="log">Iniciando...</pre>
+              </div>
 
-            <div class="mini-card mb-2">
-              <div style="color:#6b7280">Logs</div>
-              <pre id="log" style="height:120px; overflow:auto; margin:0; font-size:0.8rem;">Iniciando...</pre>
             </div>
+            
           </div>
         </div>
 
-        <footer style="margin-top:16px;text-align:center;color:#475569;font-size:0.9rem">Feito com ❤️ — toque em "Configurações" para personalizar o endpoint e thresholds.</footer>
+        <footer style="margin-top:16px;text-align:center;color:#475569;font-size:0.9rem">Feito com ❤️ — clique em "Configurar" para personalizar o endpoint e thresholds.</footer>
       </div>
     </div>
   </div>
 
-  <!-- Modal de edição do endpoint e thresholds -->
   <div class="modal fade" id="editModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
       <div class="modal-content">
@@ -173,36 +161,61 @@
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
         </div>
         <div class="modal-body">
-          <div class="mb-3">
-            <label class="form-label">Endpoint do ESP (get_ultimo / status)</label>
-            <input id="modalEndpoint" class="form-control" placeholder="http://192.168.x.x/status" />
-          </div>
-          <div class="mb-3">
-            <label class="form-label">Intervalo (ms)</label>
-            <input id="modalInterval" type="number" class="form-control" />
-          </div>
-          <div class="mb-3">
-            <label class="form-label">Usar fallback</label>
-            <select id="modalFallback" class="form-select">
-              <option value="off">Desligado</option>
-              <option value="random">Random (Temp/Umid)</option>
-            </select>
-          </div>
+          <nav>
+            <div class="nav nav-tabs" id="nav-tab-modal" role="tablist">
+              <button class="nav-link active" id="nav-con-tab" data-bs-toggle="tab" data-bs-target="#nav-con" type="button" role="tab">Conexão</button>
+              <button class="nav-link" id="nav-esp-tab" data-bs-toggle="tab" data-bs-target="#nav-esp" type="button" role="tab">ESP8266</button>
+              <button class="nav-link" id="nav-dash-tab" data-bs-toggle="tab" data-bs-target="#nav-dash" type="button" role="tab">Dashboard</button>
+            </div>
+          </nav>
+          <div class="tab-content p-3 border border-top-0 rounded-bottom" id="nav-tabContent-modal">
+            
+            <div class="tab-pane fade show active" id="nav-con" role="tabpanel">
+              <div class="mb-3">
+                <label class="form-label">Endpoint do ESP (get_ultimo / status)</label>
+                <input id="modalEndpoint" class="form-control" placeholder="http://192.168.x.x/status" />
+              </div>
+              <div class="mb-3">
+                <label class="form-label">Intervalo de leitura (ms)</label>
+                <input id="modalInterval" type="number" class="form-control" />
+              </div>
+            </div>
 
-          <!-- NOVOS: thresholds -->
-          <div class="mb-3">
-            <label class="form-label">Threshold temperatura (°C) — ex: 2.0</label>
-            <input id="modalTempThreshold" type="number" step="0.1" class="form-control" />
-          </div>
-          <div class="mb-3">
-            <label class="form-label">Threshold umidade (%) — ex: 10</label>
-            <input id="modalHumThreshold" type="number" step="0.1" class="form-control" />
-          </div>
+            <div class="tab-pane fade" id="nav-esp" role="tabpanel">
+              <div class="mb-3">
+                <label class="form-label">Threshold temperatura (°C) — ex: 2.0</label>
+                <input id="modalTempThreshold" type="number" step="0.1" class="form-control" />
+                <div class="form-text">Define no ESP quando ele deve salvar no DB.</div>
+              </div>
+              <div class="mb-3">
+                <label class="form-label">Threshold umidade (%) — ex: 10</label>
+                <input id="modalHumThreshold" type="number" step="0.1" class="form-control" />
+              </div>
+            </div>
 
+            <div class="tab-pane fade" id="nav-dash" role="tabpanel">
+              <div class="mb-3">
+                <label class="form-label">Máx pontos no gráfico</label>
+                <input id="modalMaxPoints" type="number" class="form-control" min="4" max="240" />
+              </div>
+              <div class="mb-3">
+                <label class="form-label">Usar fallback em erro</label>
+                <select id="modalFallback" class="form-select">
+                  <option value="off">Desligado</option>
+                  <option value="random">Random (Temp/Umid)</option>
+                </select>
+              </div>
+              <div class="mb-3">
+                <label class="form-label">Tentativas até offline</label>
+                <input id="modalMaxFails" type="number" class="form-control" min="1" max="10" />
+              </div>
+            </div>
+
+          </div>
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-          <button type="button" id="modalSave" class="btn btn-primary" data-bs-dismiss="modal">Salvar</button>
+          <button type="button" id="modalSave" class="btn btn-primary" data-bs-dismiss="modal">Salvar e Aplicar</button>
         </div>
       </div>
     </div>
@@ -231,6 +244,7 @@
     const displayTemp = document.getElementById('displayTemp');
     const displayHum = document.getElementById('displayHum');
     const displayTime = document.getElementById('displayTime');
+    const displaySaved = document.getElementById('displaySaved'); // NOVO
     const connBadge = document.getElementById('connBadge');
     const logEl = document.getElementById('log');
 
@@ -242,10 +256,11 @@
     const btnEdit = document.getElementById('btnEdit');
     const btnSettings = document.getElementById('btnSettings');
 
-    const intervalInput = document.getElementById('intervalInput');
-    const maxPointsInput = document.getElementById('maxPointsInput');
-    const fallbackSelect = document.getElementById('fallbackSelect');
-    const failsInput = document.getElementById('failsInput');
+    // Removido inputs da UI principal
+    // const intervalInput = document.getElementById('intervalInput');
+    // const maxPointsInput = document.getElementById('maxPointsInput');
+    // const fallbackSelect = document.getElementById('fallbackSelect');
+    // const failsInput = document.getElementById('failsInput');
 
     const summaryCount = document.getElementById('summaryCount');
     const summaryLast = document.getElementById('summaryLast');
@@ -258,13 +273,15 @@
     const maxVal = document.getElementById('maxVal');
     const avgVal = document.getElementById('avgVal');
 
-    // Modal elements
+    // Modal elements (ATUALIZADO)
     const editModal = new bootstrap.Modal(document.getElementById('editModal'));
     const modalEndpoint = document.getElementById('modalEndpoint');
     const modalInterval = document.getElementById('modalInterval');
     const modalFallback = document.getElementById('modalFallback');
     const modalTempThreshold = document.getElementById('modalTempThreshold');
     const modalHumThreshold = document.getElementById('modalHumThreshold');
+    const modalMaxPoints = document.getElementById('modalMaxPoints'); // NOVO
+    const modalMaxFails = document.getElementById('modalMaxFails'); // NOVO
     const modalSave = document.getElementById('modalSave');
 
     // load settings from localStorage
@@ -284,17 +301,18 @@
 
     let settings = loadSettings();
 
-    // UI populate
-    endpointLabel.innerText = settings.endpoint;
-    intervalInput.value = settings.interval;
-    modalEndpoint.value = settings.endpoint;
-    modalInterval.value = settings.interval;
-    modalFallback.value = settings.fallback;
-    fallbackSelect.value = settings.fallback;
-    maxPointsInput.value = settings.maxPoints;
-    failsInput.value = settings.maxFails;
-    modalTempThreshold.value = settings.tempThreshold;
-    modalHumThreshold.value = settings.humThreshold;
+    // UI populate (ATUALIZADO)
+    function populateUI(){
+      endpointLabel.innerText = settings.endpoint;
+      modalEndpoint.value = settings.endpoint;
+      modalInterval.value = settings.interval;
+      modalFallback.value = settings.fallback;
+      modalMaxPoints.value = settings.maxPoints;
+      modalMaxFails.value = settings.maxFails;
+      modalTempThreshold.value = settings.tempThreshold;
+      modalHumThreshold.value = settings.humThreshold;
+    }
+    populateUI();
 
     // ---------- Chart.js setup ----------
     const mainCtx = document.getElementById('mainChart').getContext('2d');
@@ -333,7 +351,7 @@
     refreshGradients();
 
     // ---------- helpers ----------
-    function log(msg){ const now = new Date().toISOString(); logEl.textContent = `[${now}] ${msg}\n` + logEl.textContent; }
+    function log(msg){ const now = new Date().toLocaleTimeString(); logEl.textContent = `[${now}] ${msg}\n` + logEl.textContent; }
 
     function setBadge(text, variant='secondary'){ connBadge.className = 'badge bg-' + variant; connBadge.innerText = text; }
 
@@ -345,7 +363,8 @@
       return {min,max,avg,last:vals[vals.length-1]};
     }
 
-    function pushReading(temp, hum){
+    // ATUALIZADO: PUSH READING
+    function pushReading(temp, hum, savedTemp, savedHum){
       const now = new Date();
       readings.push({t:now, temp: Number(temp), hum: Number(hum)});
       if(readings.length > Number(settings.maxPoints)) readings.shift();
@@ -365,6 +384,14 @@
       displayTemp.innerText = isNaN(s.last) ? '— °C' : s.last.toFixed(1) + ' °C';
       displayHum.innerText = isNaN(readings[readings.length-1]?.hum) ? '— %' : readings[readings.length-1].hum.toFixed(1) + ' %';
       displayTime.innerText = now.toLocaleString();
+      
+      // NOVO: Atualiza display 'saved'
+      if (savedTemp !== undefined && !isNaN(savedTemp)){
+        displaySaved.innerHTML = `<i class="bi bi-database-check"></i> Último salvo: <strong>${Number(savedTemp).toFixed(1)} °C</strong> / <strong>${Number(savedHum).toFixed(1)} %</strong>`;
+      } else {
+        displaySaved.innerHTML = '';
+      }
+
       pointsCount.innerText = readings.length;
       minVal.innerText = isNaN(s.min)?'—': s.min.toFixed(1)+' °C';
       maxVal.innerText = isNaN(s.max)?'—': s.max.toFixed(1)+' °C';
@@ -380,7 +407,7 @@
       log(`Leitura -> Temp: ${Number(temp).toFixed(1)} °C, Umid: ${Number(hum).toFixed(1)} %`);
     }
 
-    // ---------- network ----------
+    // ---------- network (ATUALIZADO) ----------
     async function fetchFromESP(){
       const url = settings.endpoint + (settings.endpoint.includes('?') ? '&_ts=' + Date.now() : '?_ts=' + Date.now());
       const controller = new AbortController();
@@ -405,14 +432,19 @@
           throw new Error('Resposta não-JSON');
         }
 
-        const t = parseFloat(json.temperatura ?? json.temp ?? json.t ?? json.valor);
-        const h = parseFloat(json.umidade ?? json.hum ?? json.h ?? json.umidade);
+        // Tenta ler 'temperatura' (padrão) ou 'latestTemp' (do /status do ESP)
+        const t = parseFloat(json.temperatura ?? json.latestTemp ?? json.temp ?? json.t ?? json.valor);
+        const h = parseFloat(json.umidade ?? json.latestHum ?? json.hum ?? json.h ?? json.umidade);
+        
+        // NOVO: Tenta ler os campos 'saved'
+        const st = parseFloat(json.saved_temp ?? NaN);
+        const sh = parseFloat(json.saved_hum ?? NaN);
 
         if (isNaN(t) || isNaN(h)) throw new Error('JSON sem valores numéricos (t/h)');
 
         failCount = 0; offline = false;
         setBadge('Online','success');
-        pushReading(t, h);
+        pushReading(t, h, st, sh); // Passa os novos valores
       } catch (err) {
         clearTimeout(timeout);
         if (err.name === 'AbortError') {
@@ -427,7 +459,7 @@
           const fallbackTemp = (Math.random()*20)+10;
           const fallbackHum = (Math.random()*60)+20;
           log('Inserindo fallback: ' + fallbackTemp.toFixed(1) + ' °C, ' + fallbackHum.toFixed(1) + ' %');
-          pushReading(fallbackTemp, fallbackHum);
+          pushReading(fallbackTemp, fallbackHum, NaN, NaN); // Fallback não tem 'saved'
         } else {
           if (failCount >= Number(settings.maxFails)) {
             offline = true;
@@ -443,7 +475,7 @@
       timer = setInterval(()=>{ if(running && !offline) fetchFromESP(); }, Number(settings.interval));
     }
 
-    // ---------- UI actions ----------
+    // ---------- UI actions (ATUALIZADO) ----------
     btnToggle.addEventListener('click', ()=>{
       running = !running; btnToggleText.innerText = running ? 'Pausar' : 'Continuar';
       btnToggle.querySelector('i').className = running ? 'bi bi-pause-fill me-1' : 'bi bi-play-fill me-1';
@@ -451,31 +483,34 @@
     });
 
     btnRetry.addEventListener('click', ()=>{ offline=false; failCount=0; setBadge('Tentando','info'); fetchFromESP(); });
-    btnClear.addEventListener('click', ()=>{ readings=[]; mainChart.data.labels=[]; mainChart.data.datasets[0].data=[]; mainChart.data.datasets[1].data=[]; sparkChart.data.labels=[]; sparkChart.data.datasets[0].data=[]; mainChart.update(); sparkChart.update(); displayTemp.innerText='— °C'; displayHum.innerText='— %'; displayTime.innerText='—'; log('Limpo histórico'); });
+    btnClear.addEventListener('click', ()=>{ readings=[]; mainChart.data.labels=[]; mainChart.data.datasets[0].data=[]; mainChart.data.datasets[1].data=[]; sparkChart.data.labels=[]; sparkChart.data.datasets[0].data=[]; mainChart.update(); sparkChart.update(); displayTemp.innerText='— °C'; displayHum.innerText='— %'; displayTime.innerText='—'; displaySaved.innerHTML=''; log('Limpo histórico'); });
 
     btnCopy.addEventListener('click', async ()=>{ try{ await navigator.clipboard.writeText(settings.endpoint); log('Endpoint copiado para área de transferência'); }catch(e){ log('Não foi possível copiar: '+e); } });
-    btnEdit.addEventListener('click', ()=>{ modalEndpoint.value = settings.endpoint; modalInterval.value = settings.interval; modalFallback.value = settings.fallback; modalTempThreshold.value = settings.tempThreshold; modalHumThreshold.value = settings.humThreshold; editModal.show(); });
-    btnSettings.addEventListener('click', ()=>{ modalEndpoint.value = settings.endpoint; modalInterval.value = settings.interval; modalFallback.value = settings.fallback; modalTempThreshold.value = settings.tempThreshold; modalHumThreshold.value = settings.humThreshold; editModal.show(); });
+    btnEdit.addEventListener('click', ()=>{ populateUI(); editModal.show(); });
+    btnSettings.addEventListener('click', ()=>{ populateUI(); editModal.show(); });
 
+    // ATUALIZADO: Salvar Modal
     modalSave.addEventListener('click', async ()=>{
+      // Salva todas as configurações do modal
       settings.endpoint = modalEndpoint.value || settings.endpoint;
       settings.interval = Number(modalInterval.value) || settings.interval;
       settings.fallback = modalFallback.value || settings.fallback;
+      settings.maxPoints = Number(modalMaxPoints.value) || settings.maxPoints;
+      settings.maxFails = Number(modalMaxFails.value) || settings.maxFails;
       settings.tempThreshold = parseFloat(modalTempThreshold.value) || settings.tempThreshold;
       settings.humThreshold  = parseFloat(modalHumThreshold.value)  || settings.humThreshold;
 
       // update quick UI
       endpointLabel.innerText = settings.endpoint;
-      intervalInput.value = settings.interval;
-      fallbackSelect.value = settings.fallback;
-
+      
       saveSettings(settings);
       log('Configurações salvas (local)');
 
       // tenta enviar thresholds para o ESP (/config)
       try {
+        // Extrai a base (http://ip:porta) do endpoint principal
         const urlObj = new URL(settings.endpoint);
-        const base = urlObj.origin; // protocolo + host[:port]
+        const base = urlObj.origin; 
         const configUrl = `${base}/config?temp=${encodeURIComponent(settings.tempThreshold)}&hum=${encodeURIComponent(settings.humThreshold)}`;
 
         log('Enviando thresholds para ESP: ' + configUrl);
@@ -489,23 +524,25 @@
           log('Falha ao enviar config (HTTP ' + resp.status + '): ' + t);
         } else {
           const j = await resp.json().catch(()=>null);
-          log('ESP respondeu: ' + (j ? JSON.stringify(j) : 'ok'));
+          log('ESP respondeu config: ' + (j ? JSON.stringify(j) : 'ok'));
         }
       } catch (e) {
         log('Não foi possível enviar thresholds para ESP: ' + e);
+        log('Nota: Isso é esperado se o endpoint não for o IP do ESP.');
       }
 
-      startLoop();
+      startLoop(); // Reinicia o loop com o novo intervalo
     });
 
-    intervalInput.addEventListener('change', ()=>{ settings.interval = Number(intervalInput.value) || settings.interval; modalInterval.value = settings.interval; saveSettings(settings); startLoop(); });
-    maxPointsInput.addEventListener('change', ()=>{ settings.maxPoints = Number(maxPointsInput.value) || settings.maxPoints; saveSettings(settings); });
-    fallbackSelect.addEventListener('change', ()=>{ settings.fallback = fallbackSelect.value; saveSettings(settings); });
-    failsInput.addEventListener('change', ()=>{ settings.maxFails = Number(failsInput.value) || settings.maxFails; saveSettings(settings); });
+    // REMOVIDO: Listeners dos inputs da UI principal
+    // intervalInput.addEventListener('change', ...);
+    // maxPointsInput.addEventListener('change', ...);
+    // fallbackSelect.addEventListener('change', ...);
+    // failsInput.addEventListener('change', ...);
 
     // iniciar
     setBadge('Iniciando','secondary');
-    log('UI inicializada — endpoint: ' + settings.endpoint + ' (thresholds: ' + settings.tempThreshold + ' °C / ' + settings.humThreshold + ' %)');
+    log('UI inicializada — endpoint: ' + settings.endpoint);
     startLoop();
     // primeira leitura imediata
     fetchFromESP();
