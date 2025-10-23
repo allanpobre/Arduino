@@ -8,23 +8,8 @@
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
-  <style>
-    :root{ --card-radius:12px; }
-    html,body{ height:100%; }
-    /* ATENÇÃO AQUI: Mudança no body */
-    body{ margin:0; padding:20px; font-family: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, Arial; background:transparent; color:#0b2540 }
-    .app-shell{ max-width:1100px; margin:10px auto }
-    .logo{ width:44px; height:44px; border-radius:8px; display:flex; align-items:center; justify-content:center; font-weight:700; background:linear-gradient(135deg,#3b82f6,#06b6d4); color:white }
-    .card-modern{ border:0; border-radius:var(--card-radius); box-shadow:0 10px 25px rgba(12,35,63,0.06); overflow:hidden }
-    .grid{ display:grid; grid-template-columns: 1fr 360px; gap:18px; align-items:start }
-    @media (max-width:900px){ .grid{ grid-template-columns:1fr } .right-col{ order:2 } }
-    .chart-area{ padding:16px; border-radius:10px; background:linear-gradient(180deg,#ffffff,#fbfdff) }
-    .chart-box{ width:100%; height:360px; display:flex; align-items:center; justify-content:center }
-    canvas{ width:100% !important; height:100% !important }
-    .mini-card{ padding:12px; border-radius:10px; background:#fff; box-shadow:0 6px 18px rgba(12,35,63,0.04); }
-    pre#log{ background:transparent; border:0; margin:0; }
-  </style>
+  
+  <link href="assets/css/dashboard.css" rel="stylesheet">
 </head>
 <body>
   <div class="app-shell">
@@ -39,7 +24,7 @@
 
       <div class="d-flex align-items-center gap-2">
         <div class="text-end me-2">
-          <div style="font-size:0.8rem;color:#6b7280">Status</div>
+          <div style="font-size:0.8rem;color:#6b7280">Status ESP</div>
           <div id="connBadge" class="badge bg-secondary">Iniciando</div>
         </div>
         <div>
@@ -54,15 +39,17 @@
           <div class="chart-area">
             <div class="d-flex justify-content-between align-items-center mb-2">
               <div>
-                <div style="font-size:0.85rem;color:#6b7280">Temperatura / Umidade</div>
+                <div style="font-size:0.85rem;color:#6b7280">Leitura Atual (Live ESP)</div>
                 <div class="d-flex align-items-baseline gap-2">
                   <div id="displayTemp" style="font-weight:800;font-size:1.5rem">— °C</div>
                   <div id="displayHum" style="font-size:1rem;color:#6b7280">— %</div>
-                  <div style="font-size:0.85rem;color:#6b7280;margin-left:8px">Última leitura</div>
+                </div>
+                <div id="displayLastDb" class="mt-1" style="font-size:0.9rem; color:#198754; font-weight: 500;">
+                  <span class="placeholder col-8 placeholder-sm"></span>
                 </div>
               </div>
               <div class="text-end">
-                <div style="font-size:0.85rem;color:#6b7280">Atualizado</div>
+                <div style="font-size:0.85rem;color:#6b7280">Atualizado (ESP)</div>
                 <div id="displayTime" style="color:#6b7280">—</div>
               </div>
             </div>
@@ -72,8 +59,8 @@
             </div>
 
             <div class="d-flex justify-content-between align-items-center mt-3" style="font-size:0.9rem;color:#6b7280">
-              <div>Histórico: <span id="pointsCount">0</span> pontos</div>
-              <div>Mín/TMáx/Média (Temp): <strong id="minVal">—</strong> / <strong id="maxVal">—</strong> / <strong id="avgVal">—</strong></div>
+              <div>Histórico (local): <span id="pointsCount">0</span> pontos</div>
+              <div>Mín/Máx/Média (Temp): <strong id="minVal">—</strong> / <strong id="maxVal">—</strong> / <strong id="avgVal">—</strong></div>
             </div>
           </div>
 
@@ -82,82 +69,92 @@
               <div class="d-flex justify-content-between align-items-start">
                 <div>
                   <div class="d-flex align-items-baseline gap-2">
-                    <div style="font-size:0.85rem;color:#6b7280">Endpoint</div>
-                    <small class="text-muted ms-2" id="endpointHint">(deve apontar para /status do ESP)</small>
+                    <div style="font-size:0.85rem;color:#6b7280">Endpoint ESP</div>
+                    <small class="text-muted ms-2" id="endpointHint">(Deve apontar para /status do ESP)</small>
                   </div>
-                  <div style="font-weight:600;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" id="endpointLabel">http://192.168.137.141/Arduino/get_ultimo.php</div>
+                  <div style="font-weight:600;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" id="endpointLabel">...</div>
                 </div>
                 <div class="d-flex flex-column align-items-end">
                   <div class="d-flex gap-1">
                     <button id="btnCopy" class="btn btn-sm btn-outline-secondary" title="Copiar endpoint"><i class="bi bi-clipboard"></i></button>
                     <button id="btnEdit" class="btn btn-sm btn-outline-secondary" title="Editar endpoint"><i class="bi bi-pencil"></i></button>
                   </div>
-                  <small style="color:#6b7280;margin-top:6px">Salva em localStorage</small>
                 </div>
-              </div>
-
-              <hr>
-
-              <div class="d-grid gap-2">
-                <div class="d-flex gap-2">
-                  <button id="btnToggle" class="btn btn-primary btn-sm"><i class="bi bi-pause-fill me-1"></i><span id="btnToggleText">Pausar</span></button>
-                  <button id="btnRetry" class="btn btn-outline-primary btn-sm"><i class="bi bi-arrow-repeat me-1"></i>Forçar leitura</button>
-                  <button id="btnClear" class="btn btn-outline-secondary btn-sm"><i class="bi bi-trash me-1"></i>Limpar</button>
-                </div>
-
-                <div>
-                  <label class="form-label small" style="color:#6b7280">Intervalo (ms)</label>
-                  <input id="intervalInput" type="number" class="form-control form-control-sm" min="500" step="100" />
-                </div>
-
-                <div>
-                  <label class="form-label small" style="color:#6b7280">Máx pontos no gráfico</label>
-                  <input id="maxPointsInput" type="number" class="form-control form-control-sm" min="4" max="240" />
-                </div>
-
-                <div class="d-flex gap-2 align-items-center">
-                  <div style="flex:1">
-                    <label class="form-label small" style="color:#6b7280">Fallback em erro</label>
-                    <select id="fallbackSelect" class="form-select form-select-sm">
-                      <option value="off">Desligado</option>
-                      <option value="random">Inserir valor random</option>
-                    </select>
-                  </div>
-                  <div style="width:120px">
-                    <label class="form-label small" style="color:#6b7280">Tentativas até offline</label>
-                    <input id="failsInput" type="number" class="form-control form-control-sm" min="1" max="10" />
-                  </div>
-                </div>
-
               </div>
             </div>
 
-            <div class="mini-card mb-3">
-              <div class="d-flex justify-content-between align-items-center mb-2">
-                <div style="color:#6b7280">Resumo rápido</div>
-                <div style="color:#6b7280">Últimos <span id="summaryCount">0</span></div>
+            <ul class="nav nav-tabs" id="infoTabs" role="tablist">
+              <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="tab-controles-btn" data-bs-toggle="tab" data-bs-target="#tab-controles" type="button" role="tab">Controles</button>
+              </li>
+              <li class="nav-item" role="presentation">
+                <button class="nav-link" id="tab-resumo-btn" data-bs-toggle="tab" data-bs-target="#tab-resumo" type="button" role="tab">Resumo</button>
+              </li>
+              <li class="nav-item" role="presentation">
+                <button class="nav-link" id="tab-logs-btn" data-bs-toggle="tab" data-bs-target="#tab-logs" type="button" role="tab">Logs</button>
+              </li>
+            </ul>
+
+            <div class="tab-content mini-card" id="infoTabsContent" style="border-top-left-radius: 0;">
+              
+              <div class="tab-pane fade show active" id="tab-controles" role="tabpanel">
+                <div class="d-grid gap-2">
+                   <div class="d-flex gap-2">
+                     <button id="btnToggle" class="btn btn-primary btn-sm" style="flex:1"><i class="bi bi-pause-fill me-1"></i><span id="btnToggleText">Pausar</span></button>
+                     <button id="btnRetry" class="btn btn-outline-primary btn-sm"><i class="bi bi-arrow-repeat me-1"></i>Forçar</button>
+                     <button id="btnClear" class="btn btn-outline-secondary btn-sm"><i class="bi bi-trash me-1"></i>Limpar</button>
+                   </div>
+                   <hr class="my-2">
+                   <div>
+                     <label class="form-label small text-muted">Intervalo Leitura ESP (ms)</label>
+                     <input id="intervalInput" type="number" class="form-control form-control-sm" min="500" step="100" />
+                   </div>
+                   <div>
+                     <label class="form-label small text-muted">Máx pontos no gráfico</label>
+                     <input id="maxPointsInput" type="number" class="form-control form-control-sm" min="4" max="240" />
+                   </div>
+                   <div class="d-flex gap-2 align-items-center">
+                     <div style="flex:1">
+                       <label class="form-label small text-muted">Fallback em erro ESP</label>
+                       <select id="fallbackSelect" class="form-select form-select-sm">
+                         <option value="off">Desligado</option>
+                         <option value="random">Inserir valor random</option>
+                       </select>
+                     </div>
+                     <div style="width:120px">
+                       <label class="form-label small text-muted">Tentativas ESP</label>
+                       <input id="failsInput" type="number" class="form-control form-control-sm" min="1" max="10" />
+                     </div>
+                   </div>
+                 </div>
               </div>
 
-              <div class="d-flex flex-column gap-2">
-                <div class="d-flex justify-content-between"><div style="color:#6b7280">Último (Temp)</div><div id="summaryLast">— °C</div></div>
-                <div class="d-flex justify-content-between"><div style="color:#6b7280">Min</div><div id="summaryMin">—</div></div>
-                <div class="d-flex justify-content-between"><div style="color:#6b7280">Max</div><div id="summaryMax">—</div></div>
-                <div class="d-flex justify-content-between"><div style="color:#6b7280">Média</div><div id="summaryAvg">—</div></div>
+              <div class="tab-pane fade" id="tab-resumo" role="tabpanel">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                  <div class="text-muted">Resumo (local)</div>
+                  <div class="text-muted">Últimos <span id="summaryCount">0</span></div>
+                </div>
+                <div class="d-flex flex-column gap-2">
+                  <div class="d-flex justify-content-between"><div class="text-muted">Último (Temp)</div><div id="summaryLast">— °C</div></div>
+                  <div class="d-flex justify-content-between"><div class="text-muted">Min</div><div id="summaryMin">—</div></div>
+                  <div class="d-flex justify-content-between"><div class="text-muted">Max</div><div id="summaryMax">—</div></div>
+                  <div class="d-flex justify-content-between"><div class="text-muted">Média</div><div id="summaryAvg">—</div></div>
+                </div>
+                <hr>
+                <div class="text-muted">Sparkline (Temp)</div>
+                <div style="height:72px"><canvas id="sparkChart"></canvas></div>
               </div>
 
-              <hr>
-              <div style="color:#6b7280">Sparkline (Temp)</div>
-              <div style="height:72px"><canvas id="sparkChart"></canvas></div>
-            </div>
+              <div class="tab-pane fade" id="tab-logs" role="tabpanel">
+                <pre id="log">Iniciando...</pre>
+              </div>
 
-            <div class="mini-card mb-2">
-              <div style="color:#6b7280">Logs</div>
-              <pre id="log" style="height:120px; overflow:auto; margin:0; font-size:0.8rem;">Iniciando...</pre>
             </div>
+            
           </div>
         </div>
 
-        <footer style="margin-top:16px;text-align:center;color:#475569;font-size:0.9rem">Feito com ❤️ — toque em "Configurações" para personalizar o endpoint e thresholds.</footer>
+        <footer style="margin-top:16px;text-align:center;color:#475569;font-size:0.9rem">Feito com ❤️ — clique no <i class="bi bi-gear"></i> para configurar.</footer>
       </div>
     </div>
   </div>
@@ -171,343 +168,33 @@
         </div>
         <div class="modal-body">
           <div class="mb-3">
-            <label class="form-label">Endpoint do ESP (get_ultimo / status)</label>
+            <label class="form-label">Endpoint do ESP (normalmente /status)</label>
             <input id="modalEndpoint" class="form-control" placeholder="http://192.168.x.x/status" />
           </div>
           <div class="mb-3">
-            <label class="form-label">Intervalo (ms)</label>
+            <label class="form-label">Intervalo de Leitura do ESP (ms)</label>
             <input id="modalInterval" type="number" class="form-control" />
           </div>
+           <hr>
           <div class="mb-3">
-            <label class="form-label">Usar fallback</label>
-            <select id="modalFallback" class="form-select">
-              <option value="off">Desligado</option>
-              <option value="random">Random (Temp/Umid)</option>
-            </select>
-          </div>
-
-          <div class="mb-3">
-            <label class="form-label">Threshold temperatura (°C) — ex: 2.0</label>
+            <label class="form-label">Threshold temperatura (°C) — <small>Enviado ao ESP</small></label>
             <input id="modalTempThreshold" type="number" step="0.1" class="form-control" />
+            <div class="form-text">Define no ESP quando ele deve salvar no DB.</div>
           </div>
           <div class="mb-3">
-            <label class="form-label">Threshold umidade (%) — ex: 10</label>
+            <label class="form-label">Threshold umidade (%) — <small>Enviado ao ESP</small></label>
             <input id="modalHumThreshold" type="number" step="0.1" class="form-control" />
           </div>
-
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-          <button type="button" id="modalSave" class="btn btn-primary" data-bs-dismiss="modal">Salvar</button>
+          <button type="button" id="modalSave" class="btn btn-primary" data-bs-dismiss="modal">Salvar e Aplicar</button>
         </div>
       </div>
     </div>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-  <script>
-  document.addEventListener('DOMContentLoaded', function(){
-    // ---------- CONFIG (valores iniciais) ----------
-    const DEFAULT_ENDPOINT = 'http://192.168.137.78/status'; // ajuste para o IP do ESP (default espera /status)
-    const DEFAULT_INTERVAL = 4000;
-    const DEFAULT_MAX_POINTS = 12;
-    const DEFAULT_MAX_FAILS = 3;
-    const DEFAULT_TEMP_THRESHOLD = 2.0;
-    const DEFAULT_HUM_THRESHOLD = 10.0;
-
-    // Estado
-    let running = true;
-    let failCount = 0;
-    let offline = false;
-    let readings = []; // {t: Date, temp: Number, hum: Number}
-    let timer = null;
-
-    // Elementos
-    const endpointLabel = document.getElementById('endpointLabel');
-    const displayTemp = document.getElementById('displayTemp');
-    const displayHum = document.getElementById('displayHum');
-    const displayTime = document.getElementById('displayTime');
-    const connBadge = document.getElementById('connBadge');
-    const logEl = document.getElementById('log');
-
-    const btnToggle = document.getElementById('btnToggle');
-    const btnToggleText = document.getElementById('btnToggleText');
-    const btnRetry = document.getElementById('btnRetry');
-    const btnClear = document.getElementById('btnClear');
-    const btnCopy = document.getElementById('btnCopy');
-    const btnEdit = document.getElementById('btnEdit');
-    const btnSettings = document.getElementById('btnSettings');
-
-    const intervalInput = document.getElementById('intervalInput');
-    const maxPointsInput = document.getElementById('maxPointsInput');
-    const fallbackSelect = document.getElementById('fallbackSelect');
-    const failsInput = document.getElementById('failsInput');
-
-    const summaryCount = document.getElementById('summaryCount');
-    const summaryLast = document.getElementById('summaryLast');
-    const summaryMin = document.getElementById('summaryMin');
-    const summaryMax = document.getElementById('summaryMax');
-    const summaryAvg = document.getElementById('summaryAvg');
-
-    const pointsCount = document.getElementById('pointsCount');
-    const minVal = document.getElementById('minVal');
-    const maxVal = document.getElementById('maxVal');
-    const avgVal = document.getElementById('avgVal');
-
-    // Modal elements
-    const editModal = new bootstrap.Modal(document.getElementById('editModal'));
-    const modalEndpoint = document.getElementById('modalEndpoint');
-    const modalInterval = document.getElementById('modalInterval');
-    const modalFallback = document.getElementById('modalFallback');
-    const modalTempThreshold = document.getElementById('modalTempThreshold');
-    const modalHumThreshold = document.getElementById('modalHumThreshold');
-    const modalSave = document.getElementById('modalSave');
-
-    // load settings from localStorage
-    function loadSettings(){
-      const s = JSON.parse(localStorage.getItem('esp_settings')||'{}');
-      return {
-        endpoint: s.endpoint || DEFAULT_ENDPOINT,
-        interval: s.interval || DEFAULT_INTERVAL,
-        maxPoints: s.maxPoints || DEFAULT_MAX_POINTS,
-        fallback: s.fallback || 'off',
-        maxFails: s.maxFails || DEFAULT_MAX_FAILS,
-        tempThreshold: (s.tempThreshold !== undefined) ? s.tempThreshold : DEFAULT_TEMP_THRESHOLD,
-        humThreshold:  (s.humThreshold  !== undefined) ? s.humThreshold  : DEFAULT_HUM_THRESHOLD
-      };
-    }
-    function saveSettings(settings){ localStorage.setItem('esp_settings', JSON.stringify(settings)); }
-
-    let settings = loadSettings();
-
-    // UI populate
-    endpointLabel.innerText = settings.endpoint;
-    intervalInput.value = settings.interval;
-    modalEndpoint.value = settings.endpoint;
-    modalInterval.value = settings.interval;
-    modalFallback.value = settings.fallback;
-    fallbackSelect.value = settings.fallback;
-    maxPointsInput.value = settings.maxPoints;
-    failsInput.value = settings.maxFails;
-    modalTempThreshold.value = settings.tempThreshold;
-    modalHumThreshold.value = settings.humThreshold;
-
-    // ---------- Chart.js setup ----------
-    const mainCtx = document.getElementById('mainChart').getContext('2d');
-
-    function createGradient(ctx){
-      const g = ctx.createLinearGradient(0,0,0,400);
-      g.addColorStop(0, 'rgba(255,99,132,0.18)');
-      g.addColorStop(1, 'rgba(255,99,132,0.02)');
-      return g;
-    }
-
-    const mainConfig = {
-      type: 'line',
-      data: { labels: [], datasets:[
-        { label:'Temperatura (°C)', data:[], fill:true, tension:0.3, pointRadius:4, borderWidth:2, yAxisID: 'y_temp', backgroundColor: null, borderColor: 'rgba(255,99,132,1)' },
-        { label:'Umidade (%)', data:[], fill:false, tension:0.3, pointRadius:2, borderWidth:2, yAxisID: 'y_hum', borderColor: 'rgba(54,162,235,1)' }
-      ] },
-      options: {
-        responsive:true, maintainAspectRatio:false,
-        interaction:{mode:'index', intersect:false},
-        plugins:{ legend:{display:true}, tooltip:{callbacks:{label:ctx=> `${ctx.dataset.label}: ${ctx.formattedValue} ${ctx.dataset.label.includes('Umidade')?'%':'°C'}`}}},
-        scales:{ x:{ display:true, grid:{display:false}}, y_temp:{ position:'left', beginAtZero:true, suggestedMin:0, suggestedMax:50, title:{display:true, text:'°C'} }, y_hum:{ position:'right', beginAtZero:true, suggestedMin:0, suggestedMax:100, grid:{display:false}, title:{display:true, text:'%'} } }
-      }
-    };
-
-    const mainChart = new Chart(mainCtx, mainConfig);
-
-    const sparkCtx = document.getElementById('sparkChart').getContext('2d');
-    const sparkConfig = { type:'line', data:{ labels:[], datasets:[{ data:[], fill:false, tension:0.5, pointRadius:0, borderWidth:1 }] }, options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{x:{display:false}, y:{display:false}} } };
-    const sparkChart = new Chart(sparkCtx, sparkConfig);
-
-    function refreshGradients(){
-      mainChart.data.datasets[0].backgroundColor = createGradient(mainCtx);
-      mainChart.update('none');
-    }
-    refreshGradients();
-
-    // ---------- helpers ----------
-    function log(msg){ const now = new Date().toISOString(); logEl.textContent = `[${now}] ${msg}\n` + logEl.textContent; }
-
-    function setBadge(text, variant='secondary'){ connBadge.className = 'badge bg-' + variant; connBadge.innerText = text; }
-
-    function statsFromData(arr, key){
-      if(!arr.length) return {min:NaN,max:NaN,avg:NaN,last:NaN};
-      const vals = arr.map(r=> r[key]);
-      const min = Math.min(...vals); const max = Math.max(...vals);
-      const avg = vals.reduce((a,b)=>a+b,0)/vals.length;
-      return {min,max,avg,last:vals[vals.length-1]};
-    }
-
-    function pushReading(temp, hum){
-      const now = new Date();
-      readings.push({t:now, temp: Number(temp), hum: Number(hum)});
-      if(readings.length > Number(settings.maxPoints)) readings.shift();
-
-      // update charts
-      mainChart.data.labels = readings.map(r=> new Date(r.t).toLocaleTimeString());
-      mainChart.data.datasets[0].data = readings.map(r=> r.temp);
-      mainChart.data.datasets[1].data = readings.map(r=> r.hum);
-      mainChart.update('active');
-
-      sparkChart.data.labels = readings.map((r,i)=>i);
-      sparkChart.data.datasets[0].data = readings.map(r=> r.temp);
-      sparkChart.update('none');
-
-      // update UI summary (temperatura)
-      const s = statsFromData(readings, 'temp');
-      displayTemp.innerText = isNaN(s.last) ? '— °C' : s.last.toFixed(1) + ' °C';
-      displayHum.innerText = isNaN(readings[readings.length-1]?.hum) ? '— %' : readings[readings.length-1].hum.toFixed(1) + ' %';
-      displayTime.innerText = now.toLocaleString();
-      pointsCount.innerText = readings.length;
-      minVal.innerText = isNaN(s.min)?'—': s.min.toFixed(1)+' °C';
-      maxVal.innerText = isNaN(s.max)?'—': s.max.toFixed(1)+' °C';
-      avgVal.innerText = isNaN(s.avg)?'—': s.avg.toFixed(1)+' °C';
-
-      // resumo
-      summaryCount.innerText = readings.length;
-      summaryLast.innerText = isNaN(s.last)?'—': s.last.toFixed(1)+' °C';
-      summaryMin.innerText = isNaN(s.min)?'—': s.min.toFixed(1)+' °C';
-      summaryMax.innerText = isNaN(s.max)?'—': s.max.toFixed(1)+' °C';
-      summaryAvg.innerText = isNaN(s.avg)?'—': s.avg.toFixed(1)+' °C';
-
-      log(`Leitura -> Temp: ${Number(temp).toFixed(1)} °C, Umid: ${Number(hum).toFixed(1)} %`);
-    }
-
-    // ---------- network ----------
-    async function fetchFromESP(){
-      const url = settings.endpoint + (settings.endpoint.includes('?') ? '&_ts=' + Date.now() : '?_ts=' + Date.now());
-      const controller = new AbortController();
-      const timeout = setTimeout(()=> controller.abort(), 7000); // 7s
-
-      try {
-        const resp = await fetch(url, { cache: 'no-store', mode: 'cors', signal: controller.signal });
-        clearTimeout(timeout);
-
-        if (!resp.ok) {
-          const txt = await resp.text().catch(()=>'<no-body>');
-          log('HTTP ' + resp.status + ' - body: ' + txt);
-          throw new Error('HTTP ' + resp.status);
-        }
-
-        let json;
-        try {
-          json = await resp.json();
-        } catch (e) {
-          const body = await resp.text().catch(()=>'<no-body>');
-          log('Resposta não-JSON: ' + body);
-          throw new Error('Resposta não-JSON');
-        }
-
-        const t = parseFloat(json.temperatura ?? json.temp ?? json.t ?? json.valor);
-        const h = parseFloat(json.umidade ?? json.hum ?? json.h ?? json.umidade);
-
-        if (isNaN(t) || isNaN(h)) throw new Error('JSON sem valores numéricos (t/h)');
-
-        failCount = 0; offline = false;
-        setBadge('Online','success');
-        pushReading(t, h);
-      } catch (err) {
-        clearTimeout(timeout);
-        if (err.name === 'AbortError') {
-          log('Erro: timeout (abort)');
-        } else {
-          log('Erro: ' + (err.message || err));
-        }
-        failCount++;
-        setBadge('Erro ('+failCount+')','warning');
-
-        if (settings.fallback === 'random') {
-          const fallbackTemp = (Math.random()*20)+10;
-          const fallbackHum = (Math.random()*60)+20;
-          log('Inserindo fallback: ' + fallbackTemp.toFixed(1) + ' °C, ' + fallbackHum.toFixed(1) + ' %');
-          pushReading(fallbackTemp, fallbackHum);
-        } else {
-          if (failCount >= Number(settings.maxFails)) {
-            offline = true;
-            setBadge('Offline','secondary');
-            log('Marca offline depois de ' + failCount + ' falhas');
-          }
-        }
-      }
-    }
-
-    function startLoop(){
-      if(timer) clearInterval(timer);
-      timer = setInterval(()=>{ if(running && !offline) fetchFromESP(); }, Number(settings.interval));
-    }
-
-    // ---------- UI actions ----------
-    btnToggle.addEventListener('click', ()=>{
-      running = !running; btnToggleText.innerText = running ? 'Pausar' : 'Continuar';
-      btnToggle.querySelector('i').className = running ? 'bi bi-pause-fill me-1' : 'bi bi-play-fill me-1';
-      setBadge(running ? (offline ? 'Offline' : 'Ativo') : 'Pausado', running ? (offline?'secondary':'success') : 'secondary');
-    });
-
-    btnRetry.addEventListener('click', ()=>{ offline=false; failCount=0; setBadge('Tentando','info'); fetchFromESP(); });
-    btnClear.addEventListener('click', ()=>{ readings=[]; mainChart.data.labels=[]; mainChart.data.datasets[0].data=[]; mainChart.data.datasets[1].data=[]; sparkChart.data.labels=[]; sparkChart.data.datasets[0].data=[]; mainChart.update(); sparkChart.update(); displayTemp.innerText='— °C'; displayHum.innerText='— %'; displayTime.innerText='—'; log('Limpo histórico'); });
-
-    btnCopy.addEventListener('click', async ()=>{ try{ await navigator.clipboard.writeText(settings.endpoint); log('Endpoint copiado para área de transferência'); }catch(e){ log('Não foi possível copiar: '+e); } });
-    btnEdit.addEventListener('click', ()=>{ modalEndpoint.value = settings.endpoint; modalInterval.value = settings.interval; modalFallback.value = settings.fallback; modalTempThreshold.value = settings.tempThreshold; modalHumThreshold.value = settings.humThreshold; editModal.show(); });
-    btnSettings.addEventListener('click', ()=>{ modalEndpoint.value = settings.endpoint; modalInterval.value = settings.interval; modalFallback.value = settings.fallback; modalTempThreshold.value = settings.tempThreshold; modalHumThreshold.value = settings.humThreshold; editModal.show(); });
-
-    modalSave.addEventListener('click', async ()=>{
-      settings.endpoint = modalEndpoint.value || settings.endpoint;
-      settings.interval = Number(modalInterval.value) || settings.interval;
-      settings.fallback = modalFallback.value || settings.fallback;
-      settings.tempThreshold = parseFloat(modalTempThreshold.value) || settings.tempThreshold;
-      settings.humThreshold  = parseFloat(modalHumThreshold.value)  || settings.humThreshold;
-
-      // update quick UI
-      endpointLabel.innerText = settings.endpoint;
-      intervalInput.value = settings.interval;
-      fallbackSelect.value = settings.fallback;
-
-      saveSettings(settings);
-      log('Configurações salvas (local)');
-
-      // tenta enviar thresholds para o ESP (/config)
-      try {
-        const urlObj = new URL(settings.endpoint);
-        const base = urlObj.origin; // protocolo + host[:port]
-        const configUrl = `${base}/config?temp=${encodeURIComponent(settings.tempThreshold)}&hum=${encodeURIComponent(settings.humThreshold)}`;
-
-        log('Enviando thresholds para ESP: ' + configUrl);
-        const controller = new AbortController();
-        const timeout = setTimeout(()=> controller.abort(), 5000);
-        const resp = await fetch(configUrl, { method: 'GET', mode: 'cors', signal: controller.signal });
-        clearTimeout(timeout);
-
-        if (!resp.ok) {
-          const t = await resp.text().catch(()=>'<no body>');
-          log('Falha ao enviar config (HTTP ' + resp.status + '): ' + t);
-        } else {
-          const j = await resp.json().catch(()=>null);
-          log('ESP respondeu: ' + (j ? JSON.stringify(j) : 'ok'));
-        }
-      } catch (e) {
-        log('Não foi possível enviar thresholds para ESP: ' + e);
-      }
-
-      startLoop();
-    });
-
-    intervalInput.addEventListener('change', ()=>{ settings.interval = Number(intervalInput.value) || settings.interval; modalInterval.value = settings.interval; saveSettings(settings); startLoop(); });
-    maxPointsInput.addEventListener('change', ()=>{ settings.maxPoints = Number(maxPointsInput.value) || settings.maxPoints; saveSettings(settings); });
-    fallbackSelect.addEventListener('change', ()=>{ settings.fallback = fallbackSelect.value; saveSettings(settings); });
-    failsInput.addEventListener('change', ()=>{ settings.maxFails = Number(failsInput.value) || settings.maxFails; saveSettings(settings); });
-
-    // iniciar
-    setBadge('Iniciando','secondary');
-    log('UI inicializada — endpoint: ' + settings.endpoint + ' (thresholds: ' + settings.tempThreshold + ' °C / ' + settings.humThreshold + ' %)');
-    startLoop();
-    // primeira leitura imediata
-    fetchFromESP();
-
-    window.addEventListener('resize', ()=>{ refreshGradients(); });
-  });
-  </script>
+  <script src="assets/js/dashboard.js"></script>
 </body>
 </html>

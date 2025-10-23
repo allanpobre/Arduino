@@ -3,9 +3,9 @@
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
-// --- (CORREÇÃO) ---
+// --- (CAMINHO CORRIGIDO) ---
 // Inclui a função de envio centralizada
-require_once __DIR__ . '/notify_function.php';
+require_once __DIR__ . '/../includes/notify_function.php';
 // --------------------
 
 header('Content-Type: application/json');
@@ -23,8 +23,10 @@ $db   = "esp_monitor";
 $user = "root";
 $pass = "";
 
+// --- (CAMINHO CORRIGIDO) ---
 // configuração do arquivo de notificações
-$notifyConfigFile = __DIR__ . '/notify_config.json';
+$notifyConfigFile = __DIR__ . '/../includes/notify_config.json';
+// --------------------
 
 // conexão com tratamento
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
@@ -84,11 +86,10 @@ try {
         $cfgRaw = @file_get_contents($notifyConfigFile);
         $cfg = json_decode($cfgRaw, true);
         if (json_last_error() === JSON_ERROR_NONE && !empty($cfg['enabled'])) {
-            // parâmetros do cfg (esperado: phone, apikey, enabled, optional thresholds)
+            // ... (lógica de notificação) ...
             $phone = trim($cfg['phone'] ?? '');
             $apikey = trim($cfg['apikey'] ?? '');
             $template = $cfg['template'] ?? 'ALERTA: Temp {temp} °C, Hum {hum}% em {datahora}';
-            // thresholds opcionais (se definidos, só enviar quando ultrapassar)
             $notify_temp_above = isset($cfg['notify_temp_above']) ? floatval($cfg['notify_temp_above']) : null;
             $notify_hum_above  = isset($cfg['notify_hum_above'])  ? floatval($cfg['notify_hum_above'])  : null;
 
@@ -97,7 +98,6 @@ try {
             if ($notify_hum_above !== null  && $hum  < $notify_hum_above)  $shouldNotify = false;
 
             if ($shouldNotify && !empty($phone) && !empty($apikey)) {
-                // monta a mensagem substituindo chaves simples
                 $message = str_replace(
                     ['{temp}','{hum}','{datahora}','{id}'],
                     [number_format($temp,2, '.', ''), number_format($hum,2,'.',''), $datahora, $insertedId],
@@ -108,13 +108,12 @@ try {
                 $sendResult = send_whatsapp_callmebot($phone, $message, $apikey);
                 $notified = $sendResult['ok'];
                 $notify_response = $sendResult;
-                // registrar log server-side
                 error_log("salvar_dht.php: notify -> phone={$phone} ok=" . ($notified? '1':'0') . " resp=" . ($sendResult['body'] ?? 'no-body'));
             }
         } else {
             error_log("salvar_dht.php: notify_config.json inválido ou JSON parse error");
         }
-    } // else: notificação não configurada — tudo OK
+    } // else: notificação não configurada
 
     echo json_encode(["status" => "ok", "temperatura" => $temp, "umidade" => $hum, "datahora" => $datahora, "id" => $insertedId, "notified" => $notified, "notify_response" => $notify_response]);
     $conn->close();

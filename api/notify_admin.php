@@ -1,8 +1,10 @@
 <?php
 // notify_admin.php - interface para editar notify_config.json + botão "Testar envio"
-// Atenção: este script NÃO tem autenticação — proteja com .htaccess ou mova para rede interna.
 
-$configFile = __DIR__ . '/notify_config.json';
+// --- (CAMINHO CORRIGIDO) ---
+$configFile = __DIR__ . '/../includes/notify_config.json';
+// --------------------
+
 $errors = [];
 $success = false;
 $cfg = [
@@ -23,9 +25,9 @@ if (file_exists($configFile)) {
     }
 }
 
-// --- (CORREÇÃO) ---
+// --- (CAMINHO CORRIGIDO) ---
 // Inclui a função de envio centralizada
-require_once __DIR__ . '/notify_function.php';
+require_once __DIR__ . '/../includes/notify_function.php';
 // --------------------
 
 
@@ -33,7 +35,6 @@ require_once __DIR__ . '/notify_function.php';
     
 
 // --- Handler AJAX: teste de envio ---
-// Se receber POST com action=test, processa e retorna JSON (usado pelo botão "Testar envio")
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && (isset($_POST['action']) && $_POST['action'] === 'test')) {
     header('Content-Type: application/json; charset=utf-8');
 
@@ -41,7 +42,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (isset($_POST['action']) && $_POST[
     $apikey = trim($_POST['apikey'] ?? '');
     $template = $_POST['template'] ?? $cfg['template'];
 
-    // valores de teste (padrões caso não enviados)
     $test_temp = isset($_POST['test_temp']) && is_numeric($_POST['test_temp']) ? floatval($_POST['test_temp']) : 25.5;
     $test_hum  = isset($_POST['test_hum'])  && is_numeric($_POST['test_hum'])  ? floatval($_POST['test_hum'])  : 55.2;
     $datahora  = date('Y-m-d H:i:s');
@@ -53,7 +53,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (isset($_POST['action']) && $_POST[
         exit;
     }
 
-    // montar mensagem substituindo placeholders
     $message = str_replace(
         ['{temp}','{hum}','{datahora}','{id}'],
         [number_format($test_temp,2,'.',''), number_format($test_hum,2,'.',''), $datahora, $test_id],
@@ -63,7 +62,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (isset($_POST['action']) && $_POST[
     // enviar (AGORA A FUNÇÃO EXISTE)
     $result = send_whatsapp_callmebot($phone, $message, $apikey);
 
-    // responder JSON com o resultado do cURL
     echo json_encode([
         'ok' => $result['ok'],
         'http_code' => $result['http_code'],
@@ -76,7 +74,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (isset($_POST['action']) && $_POST[
 
 // --- Se chegou aqui, é a renderização normal da página (GET) ou gravação via POST (Salvar) ---
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_POST['action'])) {
-    // gravação do form (salvar config)
+    // ... (lógica de salvar config) ...
     $cfg['enabled'] = isset($_POST['enabled']) && $_POST['enabled'] === '1';
     $cfg['phone'] = trim($_POST['phone'] ?? '');
     $cfg['apikey'] = trim($_POST['apikey'] ?? '');
@@ -108,13 +106,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_POST['action'])) {
   <title>Configurar Notificações WhatsApp - CallMeBot</title>
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-  <style>
-    /* ATENÇÃO AQUI: Mudança no body */
-    body {
-        background: transparent;
-        padding: 20px;
-    }
-  </style>
+  <link href="../assets/css/admin.css" rel="stylesheet">
 </head>
 <body>
   <div class="container" style="max-width:900px">
@@ -163,7 +155,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_POST['action'])) {
       <div class="d-flex gap-2">
         <button class="btn btn-primary" type="submit">Salvar</button>
         <button id="btnTest" class="btn btn-outline-success" type="button">Testar envio</button>
-        <a href="notify_config.json" class="btn btn-outline-secondary" target="_blank">Ver arquivo JSON</a>
+        <a href="../includes/notify_config.json" class="btn btn-outline-secondary" target="_blank">Ver arquivo JSON</a>
       </div>
     </form>
 
@@ -183,61 +175,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_POST['action'])) {
     <pre>ALERTA: Temperatura {temp} °C, Umidade {hum}% — {datahora}</pre>
   </div>
 
-  <script>
-  document.addEventListener('DOMContentLoaded', function(){
-    const btnTest = document.getElementById('btnTest');
-    const testResult = document.getElementById('testResult');
-
-    btnTest.addEventListener('click', async function(){
-      testResult.style.display = 'block';
-      testResult.innerHTML = '<div class="alert alert-info">Enviando teste...</div>';
-
-      const formData = new FormData();
-      formData.append('action', 'test');
-      formData.append('phone', document.getElementById('phone').value);
-      formData.append('apikey', document.getElementById('apikey').value);
-      formData.append('template', document.getElementById('template').value);
-
-      // valores de teste (poderia expor campos gui se quiser)
-      formData.append('test_temp', 28.75);
-      formData.append('test_hum', 63.4);
-
-      try {
-        // Envia o POST para ele mesmo
-        const resp = await fetch(window.location.href, {
-          method: 'POST',
-          body: formData,
-          credentials: 'same-origin'
-        });
-
-        const json = await resp.json().catch(()=>null);
-        if (!resp.ok) {
-          testResult.innerHTML = '<div class="alert alert-danger">Erro HTTP: ' + resp.status + (json && json.mensagem ? (' — ' + json.mensagem) : '') + '</div>';
-          return;
-        }
-
-        if (json) {
-          if (json.ok) {
-            testResult.innerHTML = '<div class="alert alert-success"><strong>Enviado com sucesso</strong><br>HTTP: ' + json.http_code + '<br>Resposta: ' + escapeHtml(String(json.body || '')) + '</div>'
-              + '<pre class="mt-2">Mensagem enviada:\n' + escapeHtml(String(json.sent_message || '')) + '</pre>';
-          } else {
-            testResult.innerHTML = '<div class="alert alert-warning"><strong>Falha</strong><br>HTTP: ' + json.http_code + '<br>Erro cURL: ' + escapeHtml(String(json.error || '')) + '<br>Body: ' + escapeHtml(String(json.body || '')) + '</div>';
-          }
-        } else {
-          testResult.innerHTML = '<div class="alert alert-warning">Resposta inesperada (não JSON)</div>';
-        }
-      } catch (e) {
-        testResult.innerHTML = '<div class="alert alert-danger">Erro de rede/JS: ' + escapeHtml(String(e)) + '</div>';
-      }
-    });
-
-    // helper para evitar XSS em exibicao simples
-    function escapeHtml(s){
-      return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-    }
-  });
-
-  
-  </script>
+  <script src="../assets/js/admin.js"></script>
 </body>
 </html>

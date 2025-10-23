@@ -4,5 +4,5 @@
     "apikey": "5157834",
     "notify_temp_above": 23,
     "notify_hum_above": 40,
-    "template": "ALERTA: Temp {temp} \u00b0C, Hum {hum}% em {datahora}"
+    "template": "ALERTA: Temp {temp} °C, Hum {hum}% em {datahora}"
 }

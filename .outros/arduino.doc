@@ -17,7 +17,7 @@ const char* ssid = "eduardo";
 const char* password = "eduardods";
 
 // servidor que salva no DB (salvar_dht.php)
-const char* serverURL = "http://192.168.137.1/Arduino/salvar_dht.php";
+const char* serverURL = "http://192.168.137.1/Arduino/api/salvar_dht.php";
 
 #define DHTPIN 4        // GPIO4 - D2
 #define DHTTYPE DHT11
