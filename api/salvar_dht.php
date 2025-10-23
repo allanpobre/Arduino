@@ -86,18 +86,43 @@ try {
         $cfgRaw = @file_get_contents($notifyConfigFile);
         $cfg = json_decode($cfgRaw, true);
         if (json_last_error() === JSON_ERROR_NONE && !empty($cfg['enabled'])) {
-            // ... (lógica de notificação) ...
+            // parâmetros do cfg (esperado: phone, apikey, enabled, optional thresholds)
             $phone = trim($cfg['phone'] ?? '');
             $apikey = trim($cfg['apikey'] ?? '');
             $template = $cfg['template'] ?? 'ALERTA: Temp {temp} °C, Hum {hum}% em {datahora}';
-            $notify_temp_above = isset($cfg['notify_temp_above']) ? floatval($cfg['notify_temp_above']) : null;
-            $notify_hum_above  = isset($cfg['notify_hum_above'])  ? floatval($cfg['notify_hum_above'])  : null;
+            // thresholds opcionais (se definidos, só enviar quando ultrapassar)
+            $notify_temp_above = isset($cfg['notify_temp_above']) && is_numeric($cfg['notify_temp_above']) ? floatval($cfg['notify_temp_above']) : null;
+            $notify_hum_above  = isset($cfg['notify_hum_above'])  && is_numeric($cfg['notify_hum_above']) ? floatval($cfg['notify_hum_above'])  : null;
 
-            $shouldNotify = true;
-            if ($notify_temp_above !== null && $temp < $notify_temp_above) $shouldNotify = false;
-            if ($notify_hum_above !== null  && $hum  < $notify_hum_above)  $shouldNotify = false;
+            // --- LÓGICA ALTERADA (PRECISA DE APENAS UM - OU) ---
+            $shouldNotify = false; // Começa como falso
+            $reason = ""; // Para log
+
+            if ($notify_temp_above !== null && $temp >= $notify_temp_above) {
+                $shouldNotify = true; // Atingiu o limite de temperatura
+                $reason = "Temperatura ({$temp}°C >= {$notify_temp_above}°C)";
+            }
+            // Usa 'else if' se quiser priorizar temp, ou 'if' se ambos puderem ser a causa (mantive 'if' para clareza do log)
+            if ($notify_hum_above !== null  && $hum >= $notify_hum_above) {
+                 if ($shouldNotify) {
+                     $reason .= " E Umidade ({$hum}% >= {$notify_hum_above}%)"; // Se temp já era true, adiciona
+                 } else {
+                     $reason = "Umidade ({$hum}% >= {$notify_hum_above}%)"; // Se temp não era true, define
+                 }
+                $shouldNotify = true; // Atingiu o limite de umidade (OU o de temperatura)
+            }
+            // ------------------------------------------------
+
+            // Adiciona verificação se os thresholds foram definidos
+            if (($notify_temp_above === null && $notify_hum_above === null)) {
+                 $shouldNotify = false; // Não notifica se nenhum threshold está definido
+                 error_log("salvar_dht.php: Notificação não enviada - nenhum threshold definido em notify_config.json");
+            }
+
 
             if ($shouldNotify && !empty($phone) && !empty($apikey)) {
+                error_log("salvar_dht.php: Condição de notificação atingida. Motivo: " . $reason); // Log do motivo
+                // monta a mensagem substituindo chaves simples
                 $message = str_replace(
                     ['{temp}','{hum}','{datahora}','{id}'],
                     [number_format($temp,2, '.', ''), number_format($hum,2,'.',''), $datahora, $insertedId],
@@ -108,10 +133,14 @@ try {
                 $sendResult = send_whatsapp_callmebot($phone, $message, $apikey);
                 $notified = $sendResult['ok'];
                 $notify_response = $sendResult;
-                error_log("salvar_dht.php: notify -> phone={$phone} ok=" . ($notified? '1':'0') . " resp=" . ($sendResult['body'] ?? 'no-body'));
+                // registrar log server-side
+                error_log("salvar_dht.php: Tentativa de envio -> phone={$phone} ok=" . ($notified? '1':'0') . " resp=" . ($sendResult['body'] ?? 'no-body'));
+            } elseif (!$shouldNotify && ($notify_temp_above !== null || $notify_hum_above !== null)) {
+                // Log apenas se a notificação estava habilitada e thresholds definidos, mas não atingidos
+                error_log("salvar_dht.php: Notificação não enviada - limites não atingidos (T={$temp} < {$notify_temp_above}, H={$hum} < {$notify_hum_above})");
             }
         } else {
-            error_log("salvar_dht.php: notify_config.json inválido ou JSON parse error");
+            error_log("salvar_dht.php: notify_config.json inválido, JSON parse error ou notificações desabilitadas.");
         }
     } // else: notificação não configurada
 
@@ -126,3 +155,4 @@ try {
     $conn->close();
     exit;
 }
+?>

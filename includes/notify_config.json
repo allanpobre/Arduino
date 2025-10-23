@@ -2,7 +2,7 @@
     "enabled": true,
     "phone": "+5517988382203",
     "apikey": "5157834",
-    "notify_temp_above": 23,
-    "notify_hum_above": 40,
-    "template": "ALERTA: Temp {temp} °C, Hum {hum}% em {datahora}"
+    "notify_temp_above": 25,
+    "notify_hum_above": 60,
+    "template": "ALERTA: Temp {temp} \u00b0C, Hum {hum}% em {datahora}"
 }

@@ -13,7 +13,7 @@
   <div class="sidebar d-flex flex-column">
     <div class="logo d-flex align-items-center mb-3">
       <i class="bi bi-speedometer2 me-2"></i>
-      <span>ESP Monitor</span>
+      <span>M.A.S</span>
     </div>
     <hr>
     <ul class="nav nav-pills flex-column mb-auto">
