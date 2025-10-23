@@ -1,29 +1,12 @@
 <?php
-
-
-<?php
-// notify_admin.php - interface para editar notify_config.json + botão "Testar envio"
-// ...
-
-$configFile = __DIR__ . '/notify_config.json';
-// ... (o resto das variáveis)
-
-// carregar config existente (se houver)
-// ... (o código de carregar config)
-
-// --- CORREÇÃO ---
-// Inclui a função de envio centralizada
-require_once __DIR__ . '/notify_function.php';
-// ----------------
-
-// EXCLUA A FUNÇÃO 'send_whatsapp_callmebot' QUE ESTAVA AQUI
-
-// --- Handler AJAX: teste de envio ---
-// ... (o resto do arquivo continua igual)
-
 // salvar_dht.php - versão com opcional notificação WhatsApp (CallMeBot)
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
+
+// --- (CORREÇÃO) ---
+// Inclui a função de envio centralizada
+require_once __DIR__ . '/notify_function.php';
+// --------------------
 
 header('Content-Type: application/json');
 header('Access-Control-Allow-Origin: *');
@@ -42,11 +25,6 @@ $pass = "";
 
 // configuração do arquivo de notificações
 $notifyConfigFile = __DIR__ . '/notify_config.json';
-
-// --- (APRIMORAMENTO) ---
-// Inclui a função de envio centralizada
-require_once __DIR__ . '/notify_function.php';
-// -----------------------
 
 // conexão com tratamento
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
@@ -126,8 +104,7 @@ try {
                     $template
                 );
 
-                // envia via CallMeBot
-                // Esta função agora existe porque foi incluída pelo 'require_once' no topo
+                // envia via CallMeBot (AGORA A FUNÇÃO EXISTE)
                 $sendResult = send_whatsapp_callmebot($phone, $message, $apikey);
                 $notified = $sendResult['ok'];
                 $notify_response = $sendResult;
