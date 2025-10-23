@@ -105,27 +105,7 @@
                      <button id="btnClear" class="btn btn-outline-secondary btn-sm"><i class="bi bi-trash me-1"></i>Limpar</button>
                    </div>
                    <hr class="my-2">
-                   <div>
-                     <label class="form-label small text-muted">Intervalo Leitura ESP (ms)</label>
-                     <input id="intervalInput" type="number" class="form-control form-control-sm" min="500" step="100" />
-                   </div>
-                   <div>
-                     <label class="form-label small text-muted">Máx pontos no gráfico</label>
-                     <input id="maxPointsInput" type="number" class="form-control form-control-sm" min="4" max="240" />
-                   </div>
-                   <div class="d-flex gap-2 align-items-center">
-                     <div style="flex:1">
-                       <label class="form-label small text-muted">Fallback em erro ESP</label>
-                       <select id="fallbackSelect" class="form-select form-select-sm">
-                         <option value="off">Desligado</option>
-                         <option value="random">Inserir valor random</option>
-                       </select>
-                     </div>
-                     <div style="width:120px">
-                       <label class="form-label small text-muted">Tentativas ESP</label>
-                       <input id="failsInput" type="number" class="form-control form-control-sm" min="1" max="10" />
-                     </div>
-                   </div>
+                   <small class="text-muted text-center">Configurações avançadas no botão <i class="bi bi-gear"></i>.</small>
                  </div>
               </div>
 
@@ -167,26 +147,68 @@
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
         </div>
         <div class="modal-body">
-          <div class="mb-3">
-            <label class="form-label">Endpoint do ESP (normalmente /status)</label>
-            <input id="modalEndpoint" class="form-control" placeholder="http://192.168.x.x/status" />
-          </div>
-          <div class="mb-3">
-            <label class="form-label">Intervalo de Leitura do ESP (ms)</label>
-            <input id="modalInterval" type="number" class="form-control" />
-          </div>
-           <hr>
-          <div class="mb-3">
-            <label class="form-label">Threshold temperatura (°C) — <small>Enviado ao ESP</small></label>
-            <input id="modalTempThreshold" type="number" step="0.1" class="form-control" />
-            <div class="form-text">Define no ESP quando ele deve salvar no DB.</div>
-          </div>
-          <div class="mb-3">
-            <label class="form-label">Threshold umidade (%) — <small>Enviado ao ESP</small></label>
-            <input id="modalHumThreshold" type="number" step="0.1" class="form-control" />
-          </div>
-        </div>
-        <div class="modal-footer">
+
+          <ul class="nav nav-tabs" id="modalTabs" role="tablist">
+            <li class="nav-item" role="presentation">
+              <button class="nav-link active" id="modal-tab-conexao-btn" data-bs-toggle="tab" data-bs-target="#modal-tab-conexao" type="button" role="tab">Conexão ESP</button>
+            </li>
+            <li class="nav-item" role="presentation">
+              <button class="nav-link" id="modal-tab-thresholds-btn" data-bs-toggle="tab" data-bs-target="#modal-tab-thresholds" type="button" role="tab">Thresholds ESP</button>
+            </li>
+            <li class="nav-item" role="presentation">
+              <button class="nav-link" id="modal-tab-dashboard-btn" data-bs-toggle="tab" data-bs-target="#modal-tab-dashboard" type="button" role="tab">Dashboard</button>
+            </li>
+          </ul>
+
+          <div class="tab-content pt-3" id="modalTabsContent">
+
+            <div class="tab-pane fade show active" id="modal-tab-conexao" role="tabpanel">
+              <div class="mb-3">
+                <label class="form-label">Endpoint do ESP (normalmente /status)</label>
+                <input id="modalEndpoint" class="form-control" placeholder="http://192.168.x.x/status" />
+              </div>
+              <div class="mb-3">
+                <label class="form-label">Intervalo de Leitura do ESP (ms)</label>
+                <input id="modalInterval" type="number" class="form-control" min="500" step="100"/>
+              </div>
+            </div>
+
+            <div class="tab-pane fade" id="modal-tab-thresholds" role="tabpanel">
+              <p class="form-text">Estes valores são enviados ao ESP para definir quando ele deve salvar dados no banco.</p>
+              <div class="mb-3">
+                <label class="form-label">Threshold temperatura (°C)</label>
+                <input id="modalTempThreshold" type="number" step="0.1" class="form-control" />
+              </div>
+              <div class="mb-3">
+                <label class="form-label">Threshold umidade (%)</label>
+                <input id="modalHumThreshold" type="number" step="0.1" class="form-control" />
+              </div>
+            </div>
+
+             <div class="tab-pane fade" id="modal-tab-dashboard" role="tabpanel">
+               <p class="form-text">Configurações de exibição e comportamento do dashboard.</p>
+               <div class="mb-3">
+                  <label class="form-label">Máx pontos no gráfico</label>
+                  <input id="modalMaxPoints" type="number" class="form-control" min="4" max="240" />
+                </div>
+
+                <div class="mb-3">
+                  <label class="form-label">Usar fallback em erro ESP</label>
+                  <select id="modalFallback" class="form-select">
+                    <option value="off">Desligado</option>
+                    <option value="random">Inserir valor random</option>
+                  </select>
+                  <div class="form-text">Se o ESP falhar, o gráfico pode mostrar um valor aleatório ou parar.</div>
+                </div>
+
+                <div class="mb-3">
+                  <label class="form-label">Tentativas ESP até offline</label>
+                  <input id="modalMaxFails" type="number" class="form-control" min="1" max="10" />
+                  <div class="form-text">Após quantas falhas seguidas do ESP o status muda para "Offline".</div>
+                </div>
+            </div>
+
+          </div> </div> <div class="modal-footer">
           <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
           <button type="button" id="modalSave" class="btn btn-primary" data-bs-dismiss="modal">Salvar e Aplicar</button>
         </div>

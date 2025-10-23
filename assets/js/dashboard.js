@@ -6,7 +6,6 @@ document.addEventListener('DOMContentLoaded', function(){
     const DEFAULT_MAX_FAILS = 3;
     const DEFAULT_TEMP_THRESHOLD = 2.0;
     const DEFAULT_HUM_THRESHOLD = 10.0;
-    // NOVO: Endpoint para buscar o último dado do banco
     const DB_LAST_ENDPOINT = 'api/get_ultimo.php'; // Caminho relativo
     const DB_LAST_INTERVAL = 15000; // Buscar a cada 15 segundos
 
@@ -14,19 +13,18 @@ document.addEventListener('DOMContentLoaded', function(){
     let running = true;
     let failCount = 0;
     let offline = false;
-    let readings = []; // {t: Date, temp: Number, hum: Number}
+    let readings = []; 
     let espTimer = null;
-    let dbTimer = null; // Timer para buscar do DB
+    let dbTimer = null; 
 
-    // Elementos
+    // Elementos (UI Principal)
     const endpointLabel = document.getElementById('endpointLabel');
     const displayTemp = document.getElementById('displayTemp');
     const displayHum = document.getElementById('displayHum');
     const displayTime = document.getElementById('displayTime');
-    const displayLastDb = document.getElementById('displayLastDb'); // NOVO
+    const displayLastDb = document.getElementById('displayLastDb'); 
     const connBadge = document.getElementById('connBadge');
     const logEl = document.getElementById('log');
-
     const btnToggle = document.getElementById('btnToggle');
     const btnToggleText = document.getElementById('btnToggleText');
     const btnRetry = document.getElementById('btnRetry');
@@ -34,73 +32,73 @@ document.addEventListener('DOMContentLoaded', function(){
     const btnCopy = document.getElementById('btnCopy');
     const btnEdit = document.getElementById('btnEdit');
     const btnSettings = document.getElementById('btnSettings');
-
-    const intervalInput = document.getElementById('intervalInput');
-    const maxPointsInput = document.getElementById('maxPointsInput');
-    const fallbackSelect = document.getElementById('fallbackSelect');
-    const failsInput = document.getElementById('failsInput');
-
+    
+    // Elementos (Aba Resumo)
     const summaryCount = document.getElementById('summaryCount');
     const summaryLast = document.getElementById('summaryLast');
     const summaryMin = document.getElementById('summaryMin');
     const summaryMax = document.getElementById('summaryMax');
     const summaryAvg = document.getElementById('summaryAvg');
-
+    
+    // Elementos (Gráfico Principal)
     const pointsCount = document.getElementById('pointsCount');
     const minVal = document.getElementById('minVal');
     const maxVal = document.getElementById('maxVal');
     const avgVal = document.getElementById('avgVal');
 
-    // Modal elements
+    // Modal elements (AGORA REFERENCIANDO OS INPUTS NAS ABAS)
     const editModal = new bootstrap.Modal(document.getElementById('editModal'));
     const modalEndpoint = document.getElementById('modalEndpoint');
     const modalInterval = document.getElementById('modalInterval');
-    const modalFallback = document.getElementById('modalFallback'); // Relevante para fallback do ESP
     const modalTempThreshold = document.getElementById('modalTempThreshold');
     const modalHumThreshold = document.getElementById('modalHumThreshold');
+    const modalMaxPoints = document.getElementById('modalMaxPoints'); // Movido para aba Dashboard
+    const modalFallback = document.getElementById('modalFallback');   // Movido para aba Dashboard
+    const modalMaxFails = document.getElementById('modalMaxFails');     // Movido para aba Dashboard
     const modalSave = document.getElementById('modalSave');
 
     // load settings from localStorage
     function loadSettings(){
       const s = JSON.parse(localStorage.getItem('esp_settings')||'{}');
+      // Garante que todos os campos tenham um valor default
       return {
         endpoint: s.endpoint || DEFAULT_ENDPOINT,
         interval: s.interval || DEFAULT_INTERVAL,
         maxPoints: s.maxPoints || DEFAULT_MAX_POINTS,
-        fallback: s.fallback || 'off', // Fallback do ESP
-        maxFails: s.maxFails || DEFAULT_MAX_FAILS, // Falhas do ESP
-        tempThreshold: (s.tempThreshold !== undefined) ? s.tempThreshold : DEFAULT_TEMP_THRESHOLD,
-        humThreshold:  (s.humThreshold  !== undefined) ? s.humThreshold  : DEFAULT_HUM_THRESHOLD
+        fallback: s.fallback || 'off', 
+        maxFails: s.maxFails || DEFAULT_MAX_FAILS, 
+        tempThreshold: (s.tempThreshold !== undefined && s.tempThreshold !== null) ? s.tempThreshold : DEFAULT_TEMP_THRESHOLD,
+        humThreshold:  (s.humThreshold  !== undefined && s.humThreshold !== null) ? s.humThreshold  : DEFAULT_HUM_THRESHOLD
       };
     }
     function saveSettings(settings){ localStorage.setItem('esp_settings', JSON.stringify(settings)); }
 
     let settings = loadSettings();
 
-    // UI populate
+    // UI populate (ATUALIZADO PARA PREENCHER O MODAL COM ABAS)
     function populateUI() {
-        endpointLabel.innerText = settings.endpoint;
-        intervalInput.value = settings.interval;
-        maxPointsInput.value = settings.maxPoints;
-        fallbackSelect.value = settings.fallback;
-        failsInput.value = settings.maxFails;
-        // Preenche o modal também
+        endpointLabel.innerText = settings.endpoint; // Label na UI principal
+        
+        // Preenche o modal (campos agora estão nas abas)
         modalEndpoint.value = settings.endpoint;
         modalInterval.value = settings.interval;
         modalTempThreshold.value = settings.tempThreshold;
         modalHumThreshold.value = settings.humThreshold;
+        modalMaxPoints.value = settings.maxPoints;
+        modalFallback.value = settings.fallback;
+        modalMaxFails.value = settings.maxFails;
     }
-    populateUI();
+    populateUI(); // Chamada inicial
 
-    // ---------- Chart.js setup ----------
+    // ---------- Chart.js setup (sem mudanças) ----------
     const mainCtx = document.getElementById('mainChart').getContext('2d');
-    function createGradient(ctx){ /* ... (sem mudanças) ... */ 
+    function createGradient(ctx){ 
       const g = ctx.createLinearGradient(0,0,0,400);
       g.addColorStop(0, 'rgba(255,99,132,0.18)');
       g.addColorStop(1, 'rgba(255,99,132,0.02)');
       return g;
     }
-    const mainConfig = { /* ... (sem mudanças) ... */ 
+    const mainConfig = { 
       type: 'line',
       data: { labels: [], datasets:[
         { label:'Temperatura (°C)', data:[], fill:true, tension:0.3, pointRadius:4, borderWidth:2, yAxisID: 'y_temp', backgroundColor: null, borderColor: 'rgba(255,99,132,1)' },
@@ -115,19 +113,19 @@ document.addEventListener('DOMContentLoaded', function(){
     };
     const mainChart = new Chart(mainCtx, mainConfig);
     const sparkCtx = document.getElementById('sparkChart').getContext('2d');
-    const sparkConfig = { /* ... (sem mudanças) ... */ 
+    const sparkConfig = { 
       type:'line', data:{ labels:[], datasets:[{ data:[], fill:false, tension:0.5, pointRadius:0, borderWidth:1 }] }, options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{x:{display:false}, y:{display:false}} } };
     const sparkChart = new Chart(sparkCtx, sparkConfig);
-    function refreshGradients(){ /* ... (sem mudanças) ... */ 
+    function refreshGradients(){ 
       mainChart.data.datasets[0].backgroundColor = createGradient(mainCtx); 
       mainChart.update('none'); 
     }
     refreshGradients();
 
-    // ---------- helpers ----------
+    // ---------- helpers (sem mudanças) ----------
     function log(msg){ const now = new Date().toLocaleTimeString(); logEl.textContent = `[${now}] ${msg}\n` + logEl.textContent; }
     function setBadge(text, variant='secondary'){ connBadge.className = 'badge bg-' + variant; connBadge.innerText = text; }
-    function statsFromData(arr, key){ /* ... (sem mudanças) ... */ 
+    function statsFromData(arr, key){ 
       if(!arr.length) return {min:NaN,max:NaN,avg:NaN,last:NaN};
       const vals = arr.map(r=> r[key]);
       const min = Math.min(...vals); const max = Math.max(...vals);
@@ -135,10 +133,14 @@ document.addEventListener('DOMContentLoaded', function(){
       return {min,max,avg,last:vals[vals.length-1]};
     }
 
+    // ---------- pushReading (sem mudanças) ----------
     function pushReading(temp, hum){
       const now = new Date();
       readings.push({t:now, temp: Number(temp), hum: Number(hum)});
-      if(readings.length > Number(settings.maxPoints)) readings.shift();
+      // Limita o número de pontos
+      while(readings.length > Number(settings.maxPoints)) {
+          readings.shift();
+      }
 
       // update charts
       mainChart.data.labels = readings.map(r=> new Date(r.t).toLocaleTimeString());
@@ -170,11 +172,11 @@ document.addEventListener('DOMContentLoaded', function(){
       log(`Leitura ESP -> T: ${Number(temp).toFixed(1)}°C, H: ${Number(hum).toFixed(1)}%`);
     }
 
-    // ---------- network (ESP) ----------
+    // ---------- network (ESP) (sem mudanças) ----------
     async function fetchFromESP(){
       const url = settings.endpoint + (settings.endpoint.includes('?') ? '&_ts=' + Date.now() : '?_ts=' + Date.now());
       const controller = new AbortController();
-      const timeout = setTimeout(()=> controller.abort(), 7000); // 7s
+      const timeout = setTimeout(()=> controller.abort(), 7000); 
 
       try {
         const resp = await fetch(url, { cache: 'no-store', mode: 'cors', signal: controller.signal });
@@ -184,7 +186,6 @@ document.addEventListener('DOMContentLoaded', function(){
         let json;
         try { json = await resp.json(); } catch (e) { throw new Error('Resposta ESP não-JSON'); }
 
-        // Tenta ler 'temperatura' ou outros nomes comuns
         const t = parseFloat(json.temperatura ?? json.temp ?? json.t ?? json.valor);
         const h = parseFloat(json.umidade ?? json.hum ?? json.h ?? json.umidade);
 
@@ -214,7 +215,7 @@ document.addEventListener('DOMContentLoaded', function(){
       }
     }
 
-    // ---------- NOVO: network (DB) ----------
+    // ---------- network (DB) (sem mudanças) ----------
     async function fetchLastSaved() {
       const url = `${DB_LAST_ENDPOINT}?_ts=${Date.now()}`;
       try {
@@ -241,17 +242,14 @@ document.addEventListener('DOMContentLoaded', function(){
       }
     }
 
+    // ---------- startLoops (sem mudanças) ----------
     function startLoops(){
       if(espTimer) clearInterval(espTimer);
       if(dbTimer) clearInterval(dbTimer);
       
-      // Loop para o ESP
       espTimer = setInterval(()=>{ if(running && !offline) fetchFromESP(); }, Number(settings.interval));
-      
-      // Loop para o BD (com intervalo fixo ou configurável)
       dbTimer = setInterval(()=>{ if(running) fetchLastSaved(); }, DB_LAST_INTERVAL);
       
-      // Busca inicial
       if (running) {
           fetchFromESP();
           fetchLastSaved();
@@ -259,65 +257,63 @@ document.addEventListener('DOMContentLoaded', function(){
     }
 
     // ---------- UI actions ----------
-    btnToggle.addEventListener('click', ()=>{
-      running = !running; btnToggleText.innerText = running ? 'Pausar' : 'Continuar';
-      btnToggle.querySelector('i').className = running ? 'bi bi-pause-fill me-1' : 'bi bi-play-fill me-1';
-      if(running) {
-          setBadge('Tentando','info');
-          startLoops(); // Reinicia os loops ao continuar
-      } else {
-          clearInterval(espTimer); espTimer = null;
-          clearInterval(dbTimer); dbTimer = null;
-          setBadge('Pausado','secondary');
-      }
+    btnToggle.addEventListener('click', ()=>{ /* ... (sem mudanças) ... */ 
+        running = !running; btnToggleText.innerText = running ? 'Pausar' : 'Continuar';
+        btnToggle.querySelector('i').className = running ? 'bi bi-pause-fill me-1' : 'bi bi-play-fill me-1';
+        if(running) {
+            setBadge('Tentando','info');
+            startLoops(); 
+        } else {
+            clearInterval(espTimer); espTimer = null;
+            clearInterval(dbTimer); dbTimer = null;
+            setBadge('Pausado','secondary');
+        }
     });
-
-    btnRetry.addEventListener('click', ()=>{ 
+    btnRetry.addEventListener('click', ()=>{ /* ... (sem mudanças) ... */
         offline=false; 
         failCount=0; 
         setBadge('Tentando','info'); 
-        fetchFromESP(); // Força leitura do ESP
-        fetchLastSaved(); // Força leitura do BD
+        fetchFromESP(); 
+        fetchLastSaved(); 
+    });
+    btnClear.addEventListener('click', ()=>{ /* ... (sem mudanças) ... */
+        readings=[]; 
+        mainChart.data.labels=[]; mainChart.data.datasets[0].data=[]; mainChart.data.datasets[1].data=[]; 
+        sparkChart.data.labels=[]; sparkChart.data.datasets[0].data=[]; 
+        mainChart.update(); sparkChart.update(); 
+        displayTemp.innerText='— °C'; displayHum.innerText='— %'; displayTime.innerText='—'; 
+        log('Limpo histórico'); 
+    });
+    btnCopy.addEventListener('click', async ()=>{ /* ... (sem mudanças) ... */
+        try{ await navigator.clipboard.writeText(settings.endpoint); log('Endpoint copiado para área de transferência'); }catch(e){ log('Não foi possível copiar: '+e); } 
     });
     
-    btnClear.addEventListener('click', ()=>{ readings=[]; /* ... (limpa gráficos e UI) ... */ displayTemp.innerText='— °C'; displayHum.innerText='— %'; displayTime.innerText='—'; log('Limpo histórico'); });
-    btnCopy.addEventListener('click', async ()=>{ /* ... (sem mudanças) ... */ });
-    
+    // Abrir Modal (ATUALIZADO - Apenas chama populateUI)
     btnEdit.addEventListener('click', ()=>{ 
-        modalEndpoint.value = settings.endpoint; 
-        modalInterval.value = settings.interval; 
-        // modalFallback.value = settings.fallback; // Removido do modal
-        modalTempThreshold.value = settings.tempThreshold; 
-        modalHumThreshold.value = settings.humThreshold; 
+        populateUI(); // Preenche o modal com os valores atuais
         editModal.show(); 
     });
     btnSettings.addEventListener('click', ()=>{ 
-        modalEndpoint.value = settings.endpoint; 
-        modalInterval.value = settings.interval; 
-        // modalFallback.value = settings.fallback; // Removido do modal
-        modalTempThreshold.value = settings.tempThreshold; 
-        modalHumThreshold.value = settings.humThreshold; 
+        populateUI(); // Preenche o modal com os valores atuais
         editModal.show(); 
     });
 
+    // Salvar Modal (ATUALIZADO - Lê dos campos nas abas)
     modalSave.addEventListener('click', async ()=>{
-      // Salva configurações do Modal
+      // Salva configurações lidas das abas do Modal
       settings.endpoint = modalEndpoint.value || settings.endpoint;
       settings.interval = Number(modalInterval.value) || settings.interval;
-      // settings.fallback = modalFallback.value || settings.fallback; // Removido do modal
       settings.tempThreshold = parseFloat(modalTempThreshold.value) || settings.tempThreshold;
       settings.humThreshold  = parseFloat(modalHumThreshold.value)  || settings.humThreshold;
-      
-      // Atualiza também os inputs da aba Controles (se houver)
-      settings.fallback = fallbackSelect.value;
-      settings.maxPoints = Number(maxPointsInput.value);
-      settings.maxFails = Number(failsInput.value);
+      settings.maxPoints = Number(modalMaxPoints.value) || settings.maxPoints;
+      settings.fallback = modalFallback.value || settings.fallback;
+      settings.maxFails = Number(modalMaxFails.value) || settings.maxFails;
 
       saveSettings(settings);
       log('Configurações salvas (local)');
-      populateUI(); // Atualiza a UI principal com os novos valores
+      populateUI(); // Atualiza a UI principal E o modal com os novos valores salvos
 
-      // tenta enviar thresholds para o ESP (/config)
+      // Tenta enviar thresholds para o ESP (/config)
       try {
         const urlObj = new URL(settings.endpoint);
         const base = urlObj.origin; 
@@ -332,21 +328,21 @@ document.addEventListener('DOMContentLoaded', function(){
         const j = await resp.json().catch(()=>null);
         log('ESP respondeu config: ' + (j ? JSON.stringify(j) : 'ok'));
       } catch (e) {
-        log('Não foi possível enviar thresholds para ESP: ' + e);
+        log('Não foi possível enviar thresholds para ESP: ' + e.message);
       }
 
       startLoops(); // Reinicia os loops com novos intervalos/configs
     });
 
-    // Listeners para os inputs da aba Controles (salvam diretamente)
-    intervalInput.addEventListener('change', ()=>{ settings.interval = Number(intervalInput.value) || settings.interval; saveSettings(settings); startLoops(); });
-    maxPointsInput.addEventListener('change', ()=>{ settings.maxPoints = Number(maxPointsInput.value) || settings.maxPoints; saveSettings(settings); });
-    fallbackSelect.addEventListener('change', ()=>{ settings.fallback = fallbackSelect.value; saveSettings(settings); });
-    failsInput.addEventListener('change', ()=>{ settings.maxFails = Number(failsInput.value) || settings.maxFails; saveSettings(settings); });
+    // REMOVIDOS Listeners para os inputs da aba Controles (agora salvos pelo Modal)
+    // intervalInput.addEventListener('change', ...);
+    // maxPointsInput.addEventListener('change', ...);
+    // fallbackSelect.addEventListener('change', ...);
+    // failsInput.addEventListener('change', ...);
 
     // iniciar
     setBadge('Iniciando','secondary');
     log('UI inicializada — endpoint ESP: ' + settings.endpoint);
-    startLoops(); // Inicia os loops do ESP e do BD
+    startLoops(); 
     window.addEventListener('resize', ()=>{ refreshGradients(); });
   });
