@@ -10,12 +10,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit;
 }
 
-$host = 'localhost';
-$user = 'root';
-$pass = '';
-$db   = 'esp_monitor';
+require_once __DIR__ . '/../config/config.php';
 
-$conn = @new mysqli($host, $user, $pass, $db);
+$conn = @new mysqli(DB_HOST, DB_USER, DB_PASS, DB_NAME);
 if ($conn->connect_errno) {
     http_response_code(500);
     error_log("get_ultimo.php - DB connect error: ".$conn->connect_error);

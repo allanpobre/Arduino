@@ -8,8 +8,13 @@
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-gauge@0.3.0/dist/chartjs-gauge.min.js"></script>
   
   <link href="assets/css/dashboard.css" rel="stylesheet">
+<script>
+    const DEFAULT_ENDPOINT = '<?php require_once __DIR__ . '/config/config.php'; echo DEFAULT_ENDPOINT; ?>';
+</script>
 </head>
 <body>
   <div class="app-shell">
@@ -52,6 +57,15 @@
                 <div style="font-size:0.85rem;color:#6b7280">Atualizado (ESP)</div>
                 <div id="displayTime" style="color:#6b7280">—</div>
               </div>
+            </div>
+
+            <div class="row">
+                <div class="col-md-6">
+                    <canvas id="tempGauge"></canvas>
+                </div>
+                <div class="col-md-6">
+                    <canvas id="humGauge"></canvas>
+                </div>
             </div>
 
             <div class="chart-box mini-card">

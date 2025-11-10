@@ -1,6 +1,5 @@
 document.addEventListener('DOMContentLoaded', function(){
     // ---------- CONFIG (valores iniciais) ----------
-    const DEFAULT_ENDPOINT = 'http://192.168.137.78/status'; // IP do ESP
     const DEFAULT_INTERVAL = 4000;
     const DEFAULT_MAX_POINTS = 12;
     const DEFAULT_MAX_FAILS = 3;
@@ -13,16 +12,16 @@ document.addEventListener('DOMContentLoaded', function(){
     let running = true;
     let failCount = 0;
     let offline = false;
-    let readings = []; 
+    let readings = [];
     let espTimer = null;
-    let dbTimer = null; 
+    let dbTimer = null;
 
     // Elementos (UI Principal)
     const endpointLabel = document.getElementById('endpointLabel');
     const displayTemp = document.getElementById('displayTemp');
     const displayHum = document.getElementById('displayHum');
     const displayTime = document.getElementById('displayTime');
-    const displayLastDb = document.getElementById('displayLastDb'); 
+    const displayLastDb = document.getElementById('displayLastDb');
     const connBadge = document.getElementById('connBadge');
     const logEl = document.getElementById('log');
     const btnToggle = document.getElementById('btnToggle');
@@ -32,14 +31,14 @@ document.addEventListener('DOMContentLoaded', function(){
     const btnCopy = document.getElementById('btnCopy');
     const btnEdit = document.getElementById('btnEdit');
     const btnSettings = document.getElementById('btnSettings');
-    
+
     // Elementos (Aba Resumo)
     const summaryCount = document.getElementById('summaryCount');
     const summaryLast = document.getElementById('summaryLast');
     const summaryMin = document.getElementById('summaryMin');
     const summaryMax = document.getElementById('summaryMax');
     const summaryAvg = document.getElementById('summaryAvg');
-    
+
     // Elementos (Gráfico Principal)
     const pointsCount = document.getElementById('pointsCount');
     const minVal = document.getElementById('minVal');
@@ -65,8 +64,8 @@ document.addEventListener('DOMContentLoaded', function(){
         endpoint: s.endpoint || DEFAULT_ENDPOINT,
         interval: s.interval || DEFAULT_INTERVAL,
         maxPoints: s.maxPoints || DEFAULT_MAX_POINTS,
-        fallback: s.fallback || 'off', 
-        maxFails: s.maxFails || DEFAULT_MAX_FAILS, 
+        fallback: s.fallback || 'off',
+        maxFails: s.maxFails || DEFAULT_MAX_FAILS,
         tempThreshold: (s.tempThreshold !== undefined && s.tempThreshold !== null) ? s.tempThreshold : DEFAULT_TEMP_THRESHOLD,
         humThreshold:  (s.humThreshold  !== undefined && s.humThreshold !== null) ? s.humThreshold  : DEFAULT_HUM_THRESHOLD
       };
@@ -78,7 +77,7 @@ document.addEventListener('DOMContentLoaded', function(){
     // UI populate (ATUALIZADO PARA PREENCHER O MODAL COM ABAS)
     function populateUI() {
         endpointLabel.innerText = settings.endpoint; // Label na UI principal
-        
+
         // Preenche o modal (campos agora estão nas abas)
         modalEndpoint.value = settings.endpoint;
         modalInterval.value = settings.interval;
@@ -122,6 +121,48 @@ document.addEventListener('DOMContentLoaded', function(){
     }
     refreshGradients();
 
+    // Gauge charts
+    const tempGaugeCtx = document.getElementById('tempGauge').getContext('2d');
+    const humGaugeCtx = document.getElementById('humGauge').getContext('2d');
+
+    const tempGauge = new Chart(tempGaugeCtx, {
+        type: 'gauge',
+        data: {
+            datasets: [{
+                value: 0,
+                minValue: 0,
+                data: [10, 20, 30, 40, 50],
+                backgroundColor: ['#63b3ed', '#f6e05e', '#f6ad55', '#f56565', '#c53030'],
+            }]
+        },
+        options: {
+            responsive: true,
+            title: {
+                display: true,
+                text: 'Temperatura'
+            }
+        }
+    });
+
+    const humGauge = new Chart(humGaugeCtx, {
+        type: 'gauge',
+        data: {
+            datasets: [{
+                value: 0,
+                minValue: 0,
+                data: [20, 40, 60, 80, 100],
+                backgroundColor: ['#a0aec0', '#718096', '#4a5568', '#2d3748', '#1a202c'],
+            }]
+        },
+        options: {
+            responsive: true,
+            title: {
+                display: true,
+                text: 'Umidade'
+            }
+        }
+    });
+
     // ---------- helpers (sem mudanças) ----------
     function log(msg){ const now = new Date().toLocaleTimeString(); logEl.textContent = `[${now}] ${msg}\n` + logEl.textContent; }
     function setBadge(text, variant='secondary'){ connBadge.className = 'badge bg-' + variant; connBadge.innerText = text; }
@@ -157,6 +198,12 @@ document.addEventListener('DOMContentLoaded', function(){
       displayTemp.innerText = isNaN(s.last) ? '— °C' : s.last.toFixed(1) + ' °C';
       displayHum.innerText = isNaN(readings[readings.length-1]?.hum) ? '— %' : readings[readings.length-1].hum.toFixed(1) + ' %';
       displayTime.innerText = now.toLocaleString(); // Hora da leitura do ESP
+
+      // Update gauge charts
+      tempGauge.data.datasets[0].value = temp;
+      tempGauge.update();
+      humGauge.data.datasets[0].value = hum;
+      humGauge.update();
       
       // Atualiza contadores e estatísticas
       pointsCount.innerText = readings.length;
@@ -174,6 +221,7 @@ document.addEventListener('DOMContentLoaded', function(){
 
     // ---------- network (ESP) (sem mudanças) ----------
     async function fetchFromESP(){
+        document.getElementById('loading-spinner').style.display = 'block';
       const url = settings.endpoint + (settings.endpoint.includes('?') ? '&_ts=' + Date.now() : '?_ts=' + Date.now());
       const controller = new AbortController();
       const timeout = setTimeout(()=> controller.abort(), 7000); 
@@ -212,6 +260,8 @@ document.addEventListener('DOMContentLoaded', function(){
             log('ESP offline após ' + failCount + ' falhas.');
           }
         }
+      } finally {
+        document.getElementById('loading-spinner').style.display = 'none';
       }
     }
 

@@ -12,29 +12,38 @@
 
   <div class="sidebar d-flex flex-column">
     <div class="logo d-flex align-items-center mb-3">
-      <i class="bi bi-speedometer2 me-2"></i>
+      <i class="bi bi-thermometer-half me-2"></i>
       <span>M.A.S</span>
     </div>
     <hr>
     <ul class="nav nav-pills flex-column mb-auto">
       <li class="nav-item">
-        <a href="pagina_dashboard.html" class="nav-link active" target="contentFrame">
+        <a href="pagina_dashboard.php" class="nav-link active" target="contentFrame">
           <i class="bi bi-graph-up"></i>
-          Dashboard
+          <span>Dashboard</span>
+        </a>
+      </li>
+      <li class="nav-item">
+        <a href="pagina_agenda.html" class="nav-link" target="contentFrame">
+          <i class="bi bi-calendar-event"></i>
+          <span>Agenda</span>
         </a>
       </li>
       <li class="nav-item">
         <a href="api/notify_admin.php" class="nav-link" target="contentFrame">
           <i class="bi bi-whatsapp"></i>
-          Notificações
+          <span>Notificações</span>
         </a>
       </li>
     </ul>
     <hr>
-    <div class="small text-muted">Projeto ESP8266</div>
   </div>
 
-  <iframe name="contentFrame" src="pagina_dashboard.html" class="content-frame">
+  <div class="toggle-button-container">
+      <button class="btn btn-primary btn-sm" id="toggle-menu"><i class="bi bi-arrows-angle-contract"></i></button>
+  </div>
+
+  <iframe name="contentFrame" src="pagina_dashboard.php" class="content-frame">
   </iframe>
 
   <script>
@@ -47,6 +56,19 @@
           links.forEach(l => l.classList.remove('active'));
           this.classList.add('active');
         });
+      });
+
+      const toggleMenu = document.getElementById('toggle-menu');
+      toggleMenu.addEventListener('click', function() {
+        document.body.classList.toggle('sidebar-collapsed');
+        const icon = toggleMenu.querySelector('i');
+        if (document.body.classList.contains('sidebar-collapsed')) {
+          icon.classList.remove('bi-arrows-angle-contract');
+          icon.classList.add('bi-arrows-angle-expand');
+        } else {
+          icon.classList.remove('bi-arrows-angle-expand');
+          icon.classList.add('bi-arrows-angle-contract');
+        }
       });
     });
   </script>

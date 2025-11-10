@@ -2,7 +2,7 @@
 // notify_admin.php - interface para editar notify_config.json + botão "Testar envio"
 
 // --- (CAMINHO CORRIGIDO) ---
-$configFile = __DIR__ . '/../includes/notify_config.json';
+$configFile = __DIR__ . '/../config/notify_config.json';
 // --------------------
 
 $errors = [];
@@ -30,9 +30,6 @@ if (file_exists($configFile)) {
 require_once __DIR__ . '/../includes/notify_function.php';
 // --------------------
 
-
-// --- (FUNÇÃO send_whatsapp_callmebot FOI REMOVIDA DAQUI) ---
-    
 
 // --- Handler AJAX: teste de envio ---
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && (isset($_POST['action']) && $_POST['action'] === 'test')) {
@@ -106,73 +103,84 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_POST['action'])) {
   <title>Configurar Notificações WhatsApp - CallMeBot</title>
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="../assets/css/dashboard.css" rel="stylesheet">
   <link href="../assets/css/admin.css" rel="stylesheet">
 </head>
 <body>
-  <div class="container" style="max-width:900px">
-    <h3>Configurar Notificações WhatsApp (CallMeBot)</h3>
+  <div class="app-shell">
+    <div class="card card-modern">
+        <div class="card-body">
+            <div class="d-flex align-items-center gap-3">
+                <div class="logo">N</div>
+                <div>
+                    <div style="font-weight:700;">Configurar Notificações</div>
+                    <div style="font-size:0.85rem;color:#6b7280">WhatsApp (CallMeBot)</div>
+                </div>
+            </div>
 
-    <?php if ($success): ?>
-      <div class="alert alert-success">Configuração salva com sucesso.</div>
-    <?php endif; ?>
-    <?php if (!empty($errors)): ?>
-      <div class="alert alert-danger"><ul><?php foreach($errors as $e) echo "<li>$e</li>"; ?></ul></div>
-    <?php endif; ?>
+            <?php if ($success): ?>
+              <div class="alert alert-success">Configuração salva com sucesso.</div>
+            <?php endif; ?>
+            <?php if (!empty($errors)): ?>
+              <div class="alert alert-danger"><ul><?php foreach($errors as $e) echo "<li>$e</li>"; ?></ul></div>
+            <?php endif; ?>
 
-    <form id="cfgForm" method="post" class="mb-4">
-      <div class="form-check form-switch mb-3">
-        <input class="form-check-input" type="checkbox" id="enabled" name="enabled" value="1" <?= $cfg['enabled'] ? 'checked' : '' ?>>
-        <label class="form-check-label" for="enabled">Ativar notificações WhatsApp (CallMeBot)</label>
-      </div>
+            <form id="cfgForm" method="post" class="mb-4">
+              <div class="form-check form-switch mb-3">
+                <input class="form-check-input" type="checkbox" id="enabled" name="enabled" value="1" <?= $cfg['enabled'] ? 'checked' : '' ?>>
+                <label class="form-check-label" for="enabled">Ativar notificações WhatsApp (CallMeBot)</label>
+              </div>
 
-      <div class="mb-3">
-        <label class="form-label">Telefone (com +PAÍS) — ex: +5511999999999</label>
-        <input id="phone" class="form-control" name="phone" value="<?= htmlspecialchars($cfg['phone']) ?>" placeholder="+5511..." />
-      </div>
+              <div class="mb-3">
+                <label class="form-label">Telefone (com +PAÍS) — ex: +5511999999999</label>
+                <input id="phone" class="form-control" name="phone" value="<?= htmlspecialchars($cfg['phone']) ?>" placeholder="+5511..." />
+              </div>
 
-      <div class="mb-3">
-        <label class="form-label">API Key (da CallMeBot)</label>
-        <input id="apikey" class="form-control" name="apikey" value="<?= htmlspecialchars($cfg['apikey']) ?>" />
-      </div>
+              <div class="mb-3">
+                <label class="form-label">API Key (da CallMeBot)</label>
+                <input id="apikey" class="form-control" name="apikey" value="<?= htmlspecialchars($cfg['apikey']) ?>" />
+              </div>
 
-      <div class="mb-3">
-        <label class="form-label">Template da mensagem</label>
-        <textarea id="template" class="form-control" name="template" rows="3"><?= htmlspecialchars($cfg['template']) ?></textarea>
-        <div class="form-text">Placeholders: <code>{temp}</code>, <code>{hum}</code>, <code>{datahora}</code>, <code>{id}</code></div>
-      </div>
+              <div class="mb-3">
+                <label class="form-label">Template da mensagem</label>
+                <textarea id="template" class="form-control" name="template" rows="3"><?= htmlspecialchars($cfg['template']) ?></textarea>
+                <div class="form-text">Placeholders: <code>{temp}</code>, <code>{hum}</code>, <code>{datahora}</code>, <code>{id}</code></div>
+              </div>
 
-      <div class="mb-3 row">
-        <div class="col">
-          <label class="form-label">Notificar quando temperatura ≥ (opcional)</label>
-          <input id="notify_temp_above" class="form-control" name="notify_temp_above" value="<?= $cfg['notify_temp_above'] === null ? '' : htmlspecialchars($cfg['notify_temp_above']) ?>" />
+              <div class="mb-3 row">
+                <div class="col">
+                  <label class="form-label">Notificar quando temperatura ≥ (opcional)</label>
+                  <input id="notify_temp_above" class="form-control" name="notify_temp_above" value="<?= $cfg['notify_temp_above'] === null ? '' : htmlspecialchars($cfg['notify_temp_above']) ?>" />
+                </div>
+                <div class="col">
+                  <label class="form-label">Notificar quando umidade ≥ (opcional)</label>
+                  <input id="notify_hum_above" class="form-control" name="notify_hum_above" value="<?= $cfg['notify_hum_above'] === null ? '' : htmlspecialchars($cfg['notify_hum_above']) ?>" />
+                </div>
+              </div>
+
+              <div class="d-flex gap-2">
+                <button class="btn btn-primary" type="submit">Salvar</button>
+                <button id="btnTest" class="btn btn-outline-success" type="button">Testar envio</button>
+                <a href="../config/notify_config.json" class="btn btn-outline-secondary" target="_blank">Ver arquivo JSON</a>
+              </div>
+            </form>
+
+            <div id="testResult" style="display:none;" class="mt-3"></div>
+
+            <hr>
+            <h5>Como obter o APIKEY do CallMeBot</h5>
+            <ol>
+              <li>Abra o WhatsApp do telefone que receberá as mensagens.</li>
+              <li>Adicione/responda ao número do CallMeBot conforme as instruções do site e obtenha o APIKEY.</li>
+              <li>Preencha <b>telefone</b> e <b>apikey</b> acima e ative as notificações.</li>
+            </ol>
+            <p class="small text-muted">A API gratuita do CallMeBot é destinada a uso pessoal. Para uso comercial/alto volume considere alternativas oficiais.</p>
+
+            <hr>
+            <h6>Exemplo de template</h6>
+            <pre>ALERTA: Temperatura {temp} °C, Umidade {hum}% — {datahora}</pre>
         </div>
-        <div class="col">
-          <label class="form-label">Notificar quando umidade ≥ (opcional)</label>
-          <input id="notify_hum_above" class="form-control" name="notify_hum_above" value="<?= $cfg['notify_hum_above'] === null ? '' : htmlspecialchars($cfg['notify_hum_above']) ?>" />
-        </div>
-      </div>
-
-      <div class="d-flex gap-2">
-        <button class="btn btn-primary" type="submit">Salvar</button>
-        <button id="btnTest" class="btn btn-outline-success" type="button">Testar envio</button>
-        <a href="../includes/notify_config.json" class="btn btn-outline-secondary" target="_blank">Ver arquivo JSON</a>
-      </div>
-    </form>
-
-    <div id="testResult" style="display:none;" class="mt-3"></div>
-
-    <hr>
-    <h5>Como obter o APIKEY do CallMeBot</h5>
-    <ol>
-      <li>Abra o WhatsApp do telefone que receberá as mensagens.</li>
-      <li>Adicione/responda ao número do CallMeBot conforme as instruções do site e obtenha o APIKEY.</li>
-      <li>Preencha <b>telefone</b> e <b>apikey</b> acima e ative as notificações.</li>
-    </ol>
-    <p class="small text-muted">A API gratuita do CallMeBot é destinada a uso pessoal. Para uso comercial/alto volume considere alternativas oficiais.</p>
-
-    <hr>
-    <h6>Exemplo de template</h6>
-    <pre>ALERTA: Temperatura {temp} °C, Umidade {hum}% — {datahora}</pre>
+    </div>
   </div>
 
   <script src="../assets/js/admin.js"></script>
