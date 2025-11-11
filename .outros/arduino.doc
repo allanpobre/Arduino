@@ -1,9 +1,10 @@
-/* esp_dht_conditional_wifimgr.ino
+/* esp_dht_final.ino
    - Leitura DHT11 com retries
-   - Exponhe /status (JSON) com retries e otimizado (sem String)
+   - Exponhe /status (JSON) otimizado (sem String)
    - Exponhe /config?temp=...&hum=... (persistidos em EEPROM)
    - Só faz POST para serverURL quando variação >= thresholds
-   - WiFiManager para configuração de WiFi via Portal Cativo
+   - WiFiManager para config. de WiFi (SSID/Senha)
+   - WiFiManager para config. de Parâmetro (serverURL)
 */
 
 #include <ESP8266WiFi.h>
@@ -15,18 +16,17 @@
 
 // ---------- CONFIG ----------
 // O SSID e Senha são configurados pelo WiFiManager
-// const char* ssid = "eduardo"; // <-- REMOVIDO
-// const char* password = "eduardods"; // <-- REMOVIDO
 
-// servidor que salva no DB (salvar_dht.php)
-const char* serverURL = "http://192.168.1.107/Arduino/api/salvar_dht.php";
+// O URL do servidor agora é uma variável que o WiFiManager pode preencher
+// Colocamos um valor padrão apenas para o caso de o usuário não preencher
+char serverURL[128] = "http://192.168.1.100/Arduino/api/salvar_dht.php";
+
 
 #define DHTPIN 4        // GPIO4 - D2
 #define DHTTYPE DHT11
 DHT dht(DHTPIN, DHTTYPE);
 
 const unsigned long SEND_INTERVAL = 2000UL; // intervalo entre leituras (ms), >=2000 recomendado
-// const unsigned long WIFI_RECONNECT_INTERVAL = 10000UL; // Não é mais usado pelo WiFiManager
 const int DHT_MAX_RETRIES = 3;
 
 // EEPROM
@@ -44,7 +44,6 @@ ESP8266WebServer server(80);
 
 // ---------- ESTADO ----------
 unsigned long lastSend = 0;
-// unsigned long lastWifiTry = 0; // Não é mais usado
 int failCount = 0;
 
 float latestTemp = NAN, latestHum = NAN;
@@ -89,9 +88,6 @@ void loadThresholdsFromEEPROM() {
   EEPROM.end();
 }
 
-// A função ensureWiFiConnected() foi removida, 
-// pois o WiFiManager cuida da conexão inicial 
-// e o ESP SDK tenta reconectar automaticamente se cair.
 
 bool readDHT(float &temp, float &hum) {
   for (int attempt = 1; attempt <= DHT_MAX_RETRIES; ++attempt) {
@@ -117,18 +113,20 @@ bool sendToServer(float temp, float hum) {
 
   WiFiClient client;
   HTTPClient http;
-  if (!http.begin(client, serverURL)) {
+  
+  // Agora 'serverURL' é uma variável char[], então http.begin() funciona
+  if (!http.begin(client, serverURL)) { 
     Serial.println("HTTP.begin falhou");
     return false;
   }
 
   http.addHeader("Content-Type", "application/x-www-form-urlencoded");
   
-  // Otimização aqui também: usar buffer para o body do POST
   char postBody[64];
   snprintf(postBody, sizeof(postBody), "temp=%.2f&hum=%.2f", temp, hum);
   
   Serial.print("POST >> "); Serial.println(postBody);
+  Serial.print("Para >> "); Serial.println(serverURL); // Log para onde estamos enviando
 
   int httpCode = http.POST(postBody); // Envia o buffer
   if (httpCode > 0) {
@@ -155,14 +153,22 @@ void setup() {
   // --- Conexão WiFi com WiFiManager ---
   WiFiManager wifiManager;
 
+  // --- (INÍCIO DA NOVA CONFIG) ---
+  
+  // 1. Crie o parâmetro customizado: (ID, Label, ValorPadrão, TamanhoMáximo)
+  //    O 'serverURL' aqui é o valor padrão que definimos globalmente
+  WiFiManagerParameter custom_server_url("server_url", "URL do Servidor API", serverURL, 128);
+
+  // 2. Adicione o parâmetro ao gerenciador
+  wifiManager.addParameter(&custom_server_url);
+
+  // --- (FIM DA NOVA CONFIG) ---
+
+
   // Descomente a linha abaixo para limpar as credenciais salvas (para testes)
   // wifiManager.resetSettings(); 
 
-  // Tenta conectar. Se não conseguir, inicia o portal de configuração
-  // O "AutoConnect" cria um AP (Access Point) com o nome "AutoConnectAP"
-  // e uma senha "password"
-  // Você pode mudar isso para:
-  // if (!wifiManager.autoConnect("ESP-DHT11-Config")) {
+  // Inicia o portal de configuração
   if (!wifiManager.autoConnect("AutoConnectAP", "password")) {
     Serial.println("Falha ao conectar e o tempo de config expirou");
     delay(3000);
@@ -174,6 +180,20 @@ void setup() {
   Serial.println("WiFi conectado com sucesso!");
   printNetworkInfo(); // Mostra o IP no terminal!
 
+  // --- (INÍCIO DA NOVA ATUALIZAÇÃO) ---
+  
+  // 3. ATUALIZA nossa variável global 'serverURL' com o valor que o usuário digitou no portal
+  //    Usamos strcpy() para copiar o valor do parâmetro para nossa variável
+  strcpy(serverURL, custom_server_url.getValue());
+
+  Serial.println("--- Configurações Customizadas ---");
+  Serial.print("URL do Servidor: ");
+  Serial.println(serverURL); // Mostra o URL que foi salvo
+  Serial.println("---------------------------------");
+  
+  // --- (FIM DA NOVA ATUALIZAÇÃO) ---
+
+
   // EEPROM thresholds
   loadThresholdsFromEEPROM();
 
@@ -181,10 +201,7 @@ void setup() {
   
   // --- ENDPOINT /status OTIMIZADO (sem String) ---
   server.on("/status", HTTP_GET, []() {
-    // Use um buffer C-style (192 bytes é mais que suficiente aqui)
     char buffer[192]; 
-    
-    // Usamos snprintf para formatar a string de forma segura e eficiente
     snprintf(buffer, sizeof(buffer),
       "{\"status\":\"ok\",\"temperatura\":%.2f,\"umidade\":%.2f,\"saved_temp\":%.2f,\"saved_hum\":%.2f}",
       isnan(latestTemp) ? 0.0 : latestTemp,
@@ -192,34 +209,24 @@ void setup() {
       isnan(lastSentTemp) ? 0.0 : lastSentTemp,
       isnan(lastSentHum)  ? 0.0 : lastSentHum
     );
-  
     server.sendHeader("Access-Control-Allow-Origin", "*");
-    // Envia o buffer diretamente
     server.send(200, "application/json", buffer); 
   });
   
   // config: /config?temp=2.0&hum=10.0
   server.on("/config", HTTP_GET, []() {
     bool updated = false;
-    String msg = "";
     if (server.hasArg("temp")) {
-      float t = server.arg("temp").toFloat();
-      tempThreshold = t;
+      tempThreshold = server.arg("temp").toFloat();
       updated = true;
-      msg += "temp=" + String(t,2) + " ";
     }
     if (server.hasArg("hum")) {
-      float h = server.arg("hum").toFloat();
-      humThreshold = h;
+      humThreshold = server.arg("hum").toFloat();
       updated = true;
-      msg += "hum=" + String(h,2) + " ";
     }
     if (updated) {
       saveThresholdsToEEPROM();
     }
-    
-    // Aqui ainda podemos usar String para otimizar tempo, 
-    // pois é uma requisição rara (configuração) e não em loop.
     String js = "{\"status\":\"ok\",\"tempThreshold\":" + String(tempThreshold,2) + ",\"humThreshold\":" + String(humThreshold,2) + "}";
     server.sendHeader("Access-Control-Allow-Origin", "*");
     server.send(200, "application/json", js);
@@ -237,7 +244,6 @@ void setup() {
 void loop() {
   unsigned long now = millis();
   server.handleClient();
-  // ensureWiFiConnected(); // <-- REMOVIDO
 
   if (now - lastSend >= SEND_INTERVAL) {
     lastSend = now;
@@ -272,7 +278,8 @@ void loop() {
     }
 
     if (shouldSend) {
-      bool ok = sendToServer(temp, hum);
+      // A função sendToServer() agora usa o serverURL que o usuário configurou
+      bool ok = sendToServer(temp, hum); 
       if (ok) {
         lastSentTemp = temp;
         lastSentHum  = hum;
