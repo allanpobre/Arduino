@@ -17,6 +17,11 @@
 </script>
 </head>
 <body>
+  <div id="loading-spinner" style="display: none; position: fixed; top: 10px; right: 10px; z-index: 1050;">
+    <div class="spinner-border text-primary" role="status">
+      <span class="visually-hidden">Loading...</span>
+    </div>
+  </div>
   <div class="app-shell">
     <div class="d-flex justify-content-between align-items-center mb-3">
       <div class="d-flex align-items-center gap-3">
