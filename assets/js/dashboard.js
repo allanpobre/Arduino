@@ -176,7 +176,7 @@ document.addEventListener('DOMContentLoaded', function(){
     async function fetchFromESP(){
       const url = settings.endpoint + (settings.endpoint.includes('?') ? '&_ts=' + Date.now() : '?_ts=' + Date.now());
       const controller = new AbortController();
-      const timeout = setTimeout(()=> controller.abort(), 7000); 
+      const timeout = setTimeout(()=> controller.abort(), 15000); 
 
       try {
         const resp = await fetch(url, { cache: 'no-store', mode: 'cors', signal: controller.signal });

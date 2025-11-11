@@ -1,30 +1,32 @@
-/* esp_dht_conditional.ino
+/* esp_dht_conditional_wifimgr.ino
    - Leitura DHT11 com retries
-   - Exponhe /status (JSON) com última leitura
-   - Exponhe /config?temp=...&hum=... para ajustar thresholds (persistidos em EEPROM)
+   - Exponhe /status (JSON) com retries e otimizado (sem String)
+   - Exponhe /config?temp=...&hum=... (persistidos em EEPROM)
    - Só faz POST para serverURL quando variação >= thresholds
-   - Reconnect WiFi não-bloqueante
+   - WiFiManager para configuração de WiFi via Portal Cativo
 */
 
 #include <ESP8266WiFi.h>
+#include <WiFiManager.h>        // Para configuração fácil do WiFi
 #include <ESP8266HTTPClient.h>
 #include <ESP8266WebServer.h>
 #include <DHT.h>
 #include <EEPROM.h>
 
 // ---------- CONFIG ----------
-const char* ssid = "eduardo";
-const char* password = "eduardods";
+// O SSID e Senha são configurados pelo WiFiManager
+// const char* ssid = "eduardo"; // <-- REMOVIDO
+// const char* password = "eduardods"; // <-- REMOVIDO
 
 // servidor que salva no DB (salvar_dht.php)
-const char* serverURL = "http://192.168.137.1/Arduino/api/salvar_dht.php";
+const char* serverURL = "http://192.168.1.107/Arduino/api/salvar_dht.php";
 
 #define DHTPIN 4        // GPIO4 - D2
 #define DHTTYPE DHT11
 DHT dht(DHTPIN, DHTTYPE);
 
 const unsigned long SEND_INTERVAL = 2000UL; // intervalo entre leituras (ms), >=2000 recomendado
-const unsigned long WIFI_RECONNECT_INTERVAL = 10000UL;
+// const unsigned long WIFI_RECONNECT_INTERVAL = 10000UL; // Não é mais usado pelo WiFiManager
 const int DHT_MAX_RETRIES = 3;
 
 // EEPROM
@@ -42,7 +44,7 @@ ESP8266WebServer server(80);
 
 // ---------- ESTADO ----------
 unsigned long lastSend = 0;
-unsigned long lastWifiTry = 0;
+// unsigned long lastWifiTry = 0; // Não é mais usado
 int failCount = 0;
 
 float latestTemp = NAN, latestHum = NAN;
@@ -87,29 +89,9 @@ void loadThresholdsFromEEPROM() {
   EEPROM.end();
 }
 
-void ensureWiFiConnected() {
-  if (WiFi.status() == WL_CONNECTED) return;
-  unsigned long now = millis();
-  if (now - lastWifiTry < WIFI_RECONNECT_INTERVAL) return;
-  lastWifiTry = now;
-
-  Serial.println("WiFi desconectado — tentando reconectar...");
-  WiFi.disconnect();
-  WiFi.begin(ssid, password);
-
-  unsigned long t0 = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - t0 < 5000) {
-    delay(250);
-    Serial.print(".");
-  }
-  Serial.println();
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.println("Reconectado ao WiFi!");
-    printNetworkInfo();
-  } else {
-    Serial.println("Falha ao reconectar WiFi desta vez.");
-  }
-}
+// A função ensureWiFiConnected() foi removida, 
+// pois o WiFiManager cuida da conexão inicial 
+// e o ESP SDK tenta reconectar automaticamente se cair.
 
 bool readDHT(float &temp, float &hum) {
   for (int attempt = 1; attempt <= DHT_MAX_RETRIES; ++attempt) {
@@ -141,10 +123,14 @@ bool sendToServer(float temp, float hum) {
   }
 
   http.addHeader("Content-Type", "application/x-www-form-urlencoded");
-  String body = "temp=" + String(temp, 2) + "&hum=" + String(hum, 2);
-  Serial.print("POST >> "); Serial.println(body);
+  
+  // Otimização aqui também: usar buffer para o body do POST
+  char postBody[64];
+  snprintf(postBody, sizeof(postBody), "temp=%.2f&hum=%.2f", temp, hum);
+  
+  Serial.print("POST >> "); Serial.println(postBody);
 
-  int httpCode = http.POST(body);
+  int httpCode = http.POST(postBody); // Envia o buffer
   if (httpCode > 0) {
     Serial.print("HTTP code: "); Serial.println(httpCode);
     String payload = http.getString();
@@ -166,39 +152,52 @@ void setup() {
   Serial.println("=== ESP8266 DHT11 - Iniciando (condicional) ===");
   dht.begin();
 
-  // WiFi (não-bloqueante)
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid, password);
-  Serial.print("Conectando WiFi");
-  unsigned long start = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - start < 8000) {
-    delay(300);
-    Serial.print(".");
+  // --- Conexão WiFi com WiFiManager ---
+  WiFiManager wifiManager;
+
+  // Descomente a linha abaixo para limpar as credenciais salvas (para testes)
+  // wifiManager.resetSettings(); 
+
+  // Tenta conectar. Se não conseguir, inicia o portal de configuração
+  // O "AutoConnect" cria um AP (Access Point) com o nome "AutoConnectAP"
+  // e uma senha "password"
+  // Você pode mudar isso para:
+  // if (!wifiManager.autoConnect("ESP-DHT11-Config")) {
+  if (!wifiManager.autoConnect("AutoConnectAP", "password")) {
+    Serial.println("Falha ao conectar e o tempo de config expirou");
+    delay(3000);
+    ESP.restart(); // Reinicia para tentar de novo
+    delay(5000);
   }
-  Serial.println();
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.println("WiFi conectado!");
-    printNetworkInfo();
-  } else {
-    Serial.println("WiFi NÃO conectado (iniciando sem bloqueio). Tentarei reconectar depois.");
-  }
+  
+  // Se chegou aqui, é porque conectou!
+  Serial.println("WiFi conectado com sucesso!");
+  printNetworkInfo(); // Mostra o IP no terminal!
 
   // EEPROM thresholds
   loadThresholdsFromEEPROM();
 
   // server endpoints
+  
+  // --- ENDPOINT /status OTIMIZADO (sem String) ---
   server.on("/status", HTTP_GET, []() {
-    String js = "{";
-    js += "\"status\":\"ok\",";
-    js += "\"temperatura\":" + String(isnan(latestTemp) ? 0.0 : latestTemp, 2) + ",";
-    js += "\"umidade\":"     + String(isnan(latestHum)  ? 0.0 : latestHum, 2)  + ",";
-    js += "\"saved_temp\":"  + String(isnan(lastSentTemp) ? 0.0 : lastSentTemp, 2) + ",";
-    js += "\"saved_hum\":"   + String(isnan(lastSentHum)  ? 0.0 : lastSentHum, 2);
-    js += "}";
+    // Use um buffer C-style (192 bytes é mais que suficiente aqui)
+    char buffer[192]; 
+    
+    // Usamos snprintf para formatar a string de forma segura e eficiente
+    snprintf(buffer, sizeof(buffer),
+      "{\"status\":\"ok\",\"temperatura\":%.2f,\"umidade\":%.2f,\"saved_temp\":%.2f,\"saved_hum\":%.2f}",
+      isnan(latestTemp) ? 0.0 : latestTemp,
+      isnan(latestHum)  ? 0.0 : latestHum,
+      isnan(lastSentTemp) ? 0.0 : lastSentTemp,
+      isnan(lastSentHum)  ? 0.0 : lastSentHum
+    );
+  
     server.sendHeader("Access-Control-Allow-Origin", "*");
-    server.send(200, "application/json", js);
+    // Envia o buffer diretamente
+    server.send(200, "application/json", buffer); 
   });
-
+  
   // config: /config?temp=2.0&hum=10.0
   server.on("/config", HTTP_GET, []() {
     bool updated = false;
@@ -218,6 +217,9 @@ void setup() {
     if (updated) {
       saveThresholdsToEEPROM();
     }
+    
+    // Aqui ainda podemos usar String para otimizar tempo, 
+    // pois é uma requisição rara (configuração) e não em loop.
     String js = "{\"status\":\"ok\",\"tempThreshold\":" + String(tempThreshold,2) + ",\"humThreshold\":" + String(humThreshold,2) + "}";
     server.sendHeader("Access-Control-Allow-Origin", "*");
     server.send(200, "application/json", js);
@@ -235,7 +237,7 @@ void setup() {
 void loop() {
   unsigned long now = millis();
   server.handleClient();
-  ensureWiFiConnected();
+  // ensureWiFiConnected(); // <-- REMOVIDO
 
   if (now - lastSend >= SEND_INTERVAL) {
     lastSend = now;
