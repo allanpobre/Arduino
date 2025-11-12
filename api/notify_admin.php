@@ -1,15 +1,15 @@
 <?php
 // notify_admin.php - interface para editar notify_config.json
-// VERSÃO SIMPLIFICADA (APENAS TELEGRAM)
+// (VERSÃO COM TOKEN OCULTO)
 
 $configFile = __DIR__ . '/../includes/notify_config.json';
 $errors = [];
 $success = false;
 
-// Configuração padrão (sem campos do WhatsApp)
+// Configuração padrão (sem token)
 $cfg = [
-    "service" => "telegram", // Fixo
-    "telegram_token" => "",
+    "service" => "telegram",
+    // "telegram_token" => "", // (Removido)
     "telegram_chat_id" => "",
     "enabled" => false,
     "notify_temp_above" => null,
@@ -26,7 +26,7 @@ if (file_exists($configFile)) {
     }
 }
 
-// Inclui a função de envio
+// Inclui a função de envio (que agora inclui o config.php)
 require_once __DIR__ . '/../includes/notify_function.php';
 
 // --- Handler AJAX: teste de envio (Simplificado) ---
@@ -34,52 +34,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (isset($_POST['action']) && $_POST[
     header('Content-Type: application/json; charset=utf-8');
 
     $template = $_POST['template'] ?? $cfg['template'];
-    
-    $test_temp = 25.5;
-    $test_hum  = 55.2;
-    $datahora  = date('Y-m-d H:i:s');
-    $test_id   = 'TEST-' . time();
-    
     $message = str_replace(
         ['{temp}','{hum}','{datahora}','{id}'],
-        [number_format($test_temp,2,'.',''), number_format($test_hum,2,'.',''), $datahora, $test_id],
+        [25.5, 55.2, date('Y-m-d H:i:s'), 'TEST'],
         $template
     );
     
-    $result = ['ok' => false];
-    
-    // Apenas lógica do Telegram
-    $token = trim($_POST['telegram_token'] ?? '');
+    // Apenas lógica do Telegram (sem $token)
     $chat_id = trim($_POST['telegram_chat_id'] ?? '');
-    if (empty($token) || empty($chat_id)) {
+    if (empty($chat_id)) {
         http_response_code(400);
-        echo json_encode(['ok' => false, 'mensagem' => 'Telegram Token e Chat ID são obrigatórios para testar.']);
+        echo json_encode(['ok' => false, 'mensagem' => 'Chat ID é obrigatório para testar.']);
         exit;
     }
-    $result = send_telegram_bot($token, $chat_id, $message);
+    // Chama a função que já sabe o token
+    $result = send_telegram_bot($chat_id, $message); 
 
-    echo json_encode([
-        'ok' => $result['ok'],
-        'http_code' => $result['http_code'],
-        'body' => $result['body'],
-        'error' => $result['error'],
-        'sent_message' => $message
-    ]);
+    echo json_encode([ 'ok' => $result['ok'], 'http_code' => $result['http_code'], 'body' => $result['body'], 'error' => $result['error'], 'sent_message' => $message ]);
     exit;
 }
 
 // --- Handler: Salvar (Simplificado) ---
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_POST['action'])) {
     
-    $cfg['service'] = 'telegram'; // Fixo
+    $cfg['service'] = 'telegram'; 
     $cfg['enabled'] = isset($_POST['enabled']) && $_POST['enabled'] === '1';
     
-    // Remove campos do WhatsApp
-    $cfg['phone'] = ""; 
-    $cfg['apikey'] = "";
-    
-    // Telegram
-    $cfg['telegram_token'] = trim($_POST['telegram_token'] ?? '');
+    // Telegram (só o Chat ID)
     $cfg['telegram_chat_id'] = trim($_POST['telegram_chat_id'] ?? '');
     
     // Comum
@@ -89,22 +70,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_POST['action'])) {
     $cfg['notify_temp_above'] = $nt === '' ? null : floatval($nt);
     $cfg['notify_hum_above']  = $nh === '' ? null : floatval($nh);
 
-    // Validação simplificada
-    if ($cfg['enabled'] && (empty($cfg['telegram_token']) || empty($cfg['telegram_chat_id']))) {
-        $errors[] = "Quando ativado, Bot Token e Chat ID são obrigatórios.";
+    // Validação (só Chat ID)
+    if ($cfg['enabled'] && (empty($cfg['telegram_chat_id']))) {
+        $errors[] = "Quando ativado, Chat ID é obrigatório.";
     }
 
     if (empty($errors)) {
-        // Remove campos antigos antes de salvar
+        // Remove campos desnecessários do JSON
         unset($cfg['phone']);
         unset($cfg['apikey']);
+        unset($cfg['telegram_token']); // Garante que o token nunca seja salvo aqui
 
         $saved = @file_put_contents($configFile, json_encode($cfg, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
-        if ($saved === false) {
-            $errors[] = "Erro ao gravar arquivo de configuração (verifique permissões).";
-        } else {
-            $success = true;
-        }
+        if ($saved === false) { $errors[] = "Erro ao gravar arquivo de configuração."; } else { $success = true; }
     }
 }
 ?>
@@ -119,12 +97,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_POST['action'])) {
 </head>
 <body>
   <div class="container" style="max-width:900px">
-    <h3>Configurar Notificações (Telegram)</h3> <?php if ($success): ?>
-      <div class="alert alert-success">Configuração salva com sucesso.</div>
-    <?php endif; ?>
-    <?php if (!empty($errors)): ?>
-      <div class="alert alert-danger"><ul><?php foreach($errors as $e) echo "<li>$e</li>"; ?></ul></div>
-    <?php endif; ?>
+    <h3>Configurar Notificações (Telegram)</h3>
+
+    <?php if ($success): ?> <div class="alert alert-success">Configuração salva com sucesso.</div> <?php endif; ?>
+    <?php if (!empty($errors)): ?> <div class="alert alert-danger"><ul><?php foreach($errors as $e) echo "<li>$e</li>"; ?></ul></div> <?php endif; ?>
 
     <form id="cfgForm" method="post" class="mb-4">
       <div class="form-check form-switch mb-3">
@@ -133,13 +109,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_POST['action'])) {
       </div>
 
       <div id="telegram_fields" class="p-3 border rounded mb-3" style="background-color: #f8f9fa;">
-        <h5><i class="bi bi-telegram"></i> Configuração do Bot Telegram</h5>
+        <h5><i class="bi bi-telegram"></i> Configuração do Telegram</h5>
+        
         <div class="mb-3">
-          <label class="form-label">Bot Token (fornecido pelo @BotFather)</label>
-          <input id="telegram_token" class="form-control" name="telegram_token" value="<?= htmlspecialchars($cfg['telegram_token']) ?>" placeholder="123456:ABC-DEF123..." />
-        </div>
-        <div class="mb-3">
-          <label class="form-label">Chat ID (seu ID de usuário, ex: 7664820098)</label>
+          <label class="form-label">Chat ID (O "endereço" para onde enviar)</label>
           <input id="telegram_chat_id" class="form-control" name="telegram_chat_id" value="<?= htmlspecialchars($cfg['telegram_chat_id']) ?>" placeholder="123456789" />
         </div>
       </div>
@@ -152,7 +125,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_POST['action'])) {
         <textarea id="template" class="form-control" name="template" rows="3"><?= htmlspecialchars($cfg['template']) ?></textarea>
         <div class="form-text">Placeholders: <code>{temp}</code>, <code>{hum}</code>, <code>{datahora}</code>, <code>{id}</code></div>
       </div>
-
       <div class="mb-3 row">
         <div class="col">
           <label class="form-label">Notificar quando temperatura ≥ (opcional)</label>

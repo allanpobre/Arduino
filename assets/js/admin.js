@@ -1,11 +1,8 @@
 document.addEventListener('DOMContentLoaded', function(){
     const btnTest = document.getElementById('btnTest');
     const testResult = document.getElementById('testResult');
-    
-    // --- LÓGICA DE MOSTRAR/OCULTAR REMOVIDA ---
-    // (Não é mais necessário)
 
-    // --- LÓGICA DE TESTE ATUALIZADA (SÓ TELEGRAM) ---
+    // --- LÓGICA DE TESTE ATUALIZADA (SÓ CHAT ID) ---
     btnTest.addEventListener('click', async function(){
       testResult.style.display = 'block';
       testResult.innerHTML = '<div class="alert alert-info">Enviando teste...</div>';
@@ -13,10 +10,8 @@ document.addEventListener('DOMContentLoaded', function(){
       const formData = new FormData();
       formData.append('action', 'test');
       
-      // Não precisa mais enviar 'service'
-      
-      // Envia apenas os campos do Telegram
-      formData.append('telegram_token', document.getElementById('telegram_token').value);
+      // Envia apenas os campos relevantes
+      // (O TOKEN É LIDO PELO PHP NO SERVIDOR)
       formData.append('telegram_chat_id', document.getElementById('telegram_chat_id').value);
       formData.append('template', document.getElementById('template').value);
 
@@ -25,7 +20,6 @@ document.addEventListener('DOMContentLoaded', function(){
       formData.append('test_hum', 63.4);
 
       try {
-        // Envia o POST para ele mesmo
         const resp = await fetch(window.location.href, {
           method: 'POST',
           body: formData,
@@ -34,7 +28,8 @@ document.addEventListener('DOMContentLoaded', function(){
 
         const json = await resp.json().catch(()=>null);
         if (!resp.ok) {
-          testResult.innerHTML = '<div class="alert alert-danger">Erro HTTP: ' + resp.status + (json && json.mensagem ? (' — ' + json.mensagem) : '') + '</div>';
+          let errorMsg = json && json.mensagem ? json.mensagem : '';
+          testResult.innerHTML = `<div class="alert alert-danger">Erro HTTP: ${resp.status} — ${escapeHtml(errorMsg)}</div>`;
           return;
         }
 
@@ -43,7 +38,7 @@ document.addEventListener('DOMContentLoaded', function(){
             testResult.innerHTML = '<div class="alert alert-success"><strong>Enviado com sucesso (Telegram)</strong><br>HTTP: ' + json.http_code + '<br>Resposta: ' + escapeHtml(String(json.body || '')) + '</div>'
               + '<pre class="mt-2">Mensagem enviada:\n' + escapeHtml(String(json.sent_message || '')) + '</pre>';
           } else {
-            testResult.innerHTML = '<div class="alert alert-warning"><strong>Falha</strong><br>HTTP: ' + json.http_code + '<br>Erro cURL: ' + escapeHtml(String(json.error || '')) + '<br>Body: ' + escapeHtml(String(json.body || '')) + '</div>';
+            testResult.innerHTML = '<div class="alert alert-warning"><strong>Falha</strong><br>HTTP: ' + json.http_code + '<br>Erro: ' + escapeHtml(String(json.error || '')) + '<br>Body: ' + escapeHtml(String(json.body || '')) + '</div>';
           }
         } else {
           testResult.innerHTML = '<div class="alert alert-warning">Resposta inesperada (não JSON)</div>';
@@ -53,8 +48,7 @@ document.addEventListener('DOMContentLoaded', function(){
       }
     });
 
-    // helper para evitar XSS
     function escapeHtml(s){
-      return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+      return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
     }
   });

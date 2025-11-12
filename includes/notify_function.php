@@ -2,32 +2,39 @@
 // notify_function.php
 // Contém a função centralizada para enviar mensagens (APENAS TELEGRAM)
 
+// INCLUI O NOVO ARQUIVO DE CONFIGURAÇÃO
+require_once __DIR__ . '/config.php';
+
 /**
  * Envia uma mensagem de Telegram usando a API oficial.
  *
- * @param string $bot_token O token do seu bot (do BotFather).
  * @param string $chat_id O ID do chat para onde enviar.
- * @param string $text A mensagem a ser enviada (suporta Markdown Básico).
+ * @param string $text A mensagem a ser enviada.
  * @return array Retorna um array com ['ok', 'http_code', 'body', 'error'].
  */
-function send_telegram_bot(string $bot_token, string $chat_id, string $text): array {
+// A FUNÇÃO FOI SIMPLIFICADA (NÃO PRECISA MAIS DO $bot_token)
+function send_telegram_bot(string $chat_id, string $text): array {
     
-    $url = "https://api.telegram.org/bot" . $bot_token . "/sendMessage";
+    // Verifica se o token foi carregado do config.php
+    if (!defined('TELEGRAM_BOT_TOKEN') || TELEGRAM_BOT_TOKEN === '') {
+        return ['ok' => false, 'http_code' => 500, 'body' => null, 'error' => 'TELEGRAM_BOT_TOKEN não definido em includes/config.php'];
+    }
+
+    // USA A CONSTANTE GLOBAL
+    $url = "https://api.telegram.org/bot" . TELEGRAM_BOT_TOKEN . "/sendMessage";
     
     $post_data = [
         'chat_id' => $chat_id,
         'text' => $text,
-        'parse_mode' => 'Markdown' // Permite usar *negrito* ou _itálico_
+        'parse_mode' => 'Markdown'
     ];
 
     $ch = curl_init();
     curl_setopt($ch, CURLOPT_URL, $url);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_POST, true); // Definindo como POST
-    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($post_data)); // Enviando como JSON
-    curl_setopt($ch, CURLOPT_HTTPHEADER, [
-        'Content-Type: application/json'
-    ]);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($post_data));
+    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
     curl_setopt($ch, CURLOPT_TIMEOUT, 8);
     curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
     

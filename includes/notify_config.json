@@ -1,6 +1,5 @@
 {
     "service": "telegram",
-    "telegram_token": "8296168103:AAEr5GGv1ieNOQTU0_3xI0rVxNznI8HPdkc",
     "telegram_chat_id": "7664820098",
     "enabled": true,
     "notify_temp_above": 40,
