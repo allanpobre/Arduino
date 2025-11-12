@@ -5,22 +5,24 @@
    - Só faz POST para serverURL quando variação >= thresholds
    - WiFiManager para config. de WiFi (SSID/Senha)
    - WiFiManager para config. de Parâmetro (serverURL)
+   - mDNS para hostname amigável (http://esp-dht.local)
+   - Endpoint /resetwifi para forçar reconfiguração via software
 */
 
 #include <ESP8266WiFi.h>
 #include <WiFiManager.h>        // Para configuração fácil do WiFi
 #include <ESP8266HTTPClient.h>
 #include <ESP8266WebServer.h>
+#include <ESP8266mDNS.h>        // Para http://esp-dht.local
 #include <DHT.h>
 #include <EEPROM.h>
 
 // ---------- CONFIG ----------
-// O SSID e Senha são configurados pelo WiFiManager
-
 // O URL do servidor agora é uma variável que o WiFiManager pode preencher
-// Colocamos um valor padrão apenas para o caso de o usuário não preencher
 char serverURL[128] = "http://192.168.1.100/Arduino/api/salvar_dht.php";
 
+// --- O PINO DE RESET FOI REMOVIDO ---
+// #define WIFI_RESET_PIN D7 // (GPIO13) <-- REMOVIDO
 
 #define DHTPIN 4        // GPIO4 - D2
 #define DHTTYPE DHT11
@@ -114,7 +116,6 @@ bool sendToServer(float temp, float hum) {
   WiFiClient client;
   HTTPClient http;
   
-  // Agora 'serverURL' é uma variável char[], então http.begin() funciona
   if (!http.begin(client, serverURL)) { 
     Serial.println("HTTP.begin falhou");
     return false;
@@ -126,9 +127,9 @@ bool sendToServer(float temp, float hum) {
   snprintf(postBody, sizeof(postBody), "temp=%.2f&hum=%.2f", temp, hum);
   
   Serial.print("POST >> "); Serial.println(postBody);
-  Serial.print("Para >> "); Serial.println(serverURL); // Log para onde estamos enviando
+  Serial.print("Para >> "); Serial.println(serverURL); 
 
-  int httpCode = http.POST(postBody); // Envia o buffer
+  int httpCode = http.POST(postBody);
   if (httpCode > 0) {
     Serial.print("HTTP code: "); Serial.println(httpCode);
     String payload = http.getString();
@@ -151,28 +152,22 @@ void setup() {
   dht.begin();
 
   // --- Conexão WiFi com WiFiManager ---
-  WiFiManager wifiManager;
+  WiFiManager wifiManager; // Declaramos o manager aqui
 
-  // --- (INÍCIO DA NOVA CONFIG) ---
-  
-  // 1. Crie o parâmetro customizado: (ID, Label, ValorPadrão, TamanhoMáximo)
-  //    O 'serverURL' aqui é o valor padrão que definimos globalmente
+  // --- (BLOCO DE RESET FÍSICO REMOVIDO) ---
+  // A verificação do pino D7 foi removida.
+
+  // 1. Crie o parâmetro customizado
   WiFiManagerParameter custom_server_url("server_url", "URL do Servidor API", serverURL, 128);
 
   // 2. Adicione o parâmetro ao gerenciador
   wifiManager.addParameter(&custom_server_url);
 
-  // --- (FIM DA NOVA CONFIG) ---
-
-
-  // Descomente a linha abaixo para limpar as credenciais salvas (para testes)
-  // wifiManager.resetSettings(); 
-
   // Inicia o portal de configuração
   if (!wifiManager.autoConnect("AutoConnectAP", "password")) {
     Serial.println("Falha ao conectar e o tempo de config expirou");
     delay(3000);
-    ESP.restart(); // Reinicia para tentar de novo
+    ESP.restart(); 
     delay(5000);
   }
   
@@ -180,10 +175,18 @@ void setup() {
   Serial.println("WiFi conectado com sucesso!");
   printNetworkInfo(); // Mostra o IP no terminal!
 
-  // --- (INÍCIO DA NOVA ATUALIZAÇÃO) ---
-  
-  // 3. ATUALIZA nossa variável global 'serverURL' com o valor que o usuário digitou no portal
-  //    Usamos strcpy() para copiar o valor do parâmetro para nossa variável
+  // --- (INÍCIO NOVA CONFIG mDNS) ---
+  Serial.println("Iniciando mDNS (http://esp-dht.local)");
+  if (!MDNS.begin("esp-dht")) { 
+    Serial.println("Erro ao iniciar mDNS!");
+  } else {
+    MDNS.addService("http", "tcp", 80);
+    Serial.println("mDNS iniciado. Acesse em: http://esp-dht.local");
+  }
+  // --- (FIM NOVA CONFIG mDNS) ---
+
+
+  // 3. ATUALIZA nossa variável global 'serverURL' com o valor que o usuário digitou
   strcpy(serverURL, custom_server_url.getValue());
 
   Serial.println("--- Configurações Customizadas ---");
@@ -191,9 +194,6 @@ void setup() {
   Serial.println(serverURL); // Mostra o URL que foi salvo
   Serial.println("---------------------------------");
   
-  // --- (FIM DA NOVA ATUALIZAÇÃO) ---
-
-
   // EEPROM thresholds
   loadThresholdsFromEEPROM();
 
@@ -237,13 +237,38 @@ void setup() {
     server.send(200, "text/plain", "pong");
   });
 
+  // --- NOVO ENDPOINT DE RESET VIA SOFTWARE ---
+  server.on("/resetwifi", HTTP_GET, []() {
+    Serial.println("Recebida solicitação /resetwifi...");
+    
+    // 1. Envia a resposta ao usuário IMEDIATAMENTE.
+    server.send(200, "text/html", 
+      "<h1>Configuracoes de WiFi limpas!</h1>"
+      "<p>O ESP vai reiniciar em 3 segundos e criar o portal 'AutoConnectAP'.</p>"
+      "<p>Conecte-se a essa rede para reconfigurar.</p>");
+    
+    // 2. Dá um pequeno delay para a resposta ser enviada
+    delay(3000); 
+
+    // 3. Cria uma instância temporária SÓ para limpar as configs
+    WiFiManager wifiManager; 
+    wifiManager.resetSettings();
+    
+    Serial.println("Configurações limpas. Reiniciando agora...");
+    
+    // 4. Reinicia o ESP
+    ESP.restart();
+  });
+
+
   server.begin();
-  Serial.println("HTTP server iniciado (endpoints: /status, /config)");
+  Serial.println("HTTP server iniciado (endpoints: /status, /config, /resetwifi)");
 }
 
 void loop() {
   unsigned long now = millis();
   server.handleClient();
+  MDNS.update(); // Mantém o mDNS funcionando
 
   if (now - lastSend >= SEND_INTERVAL) {
     lastSend = now;

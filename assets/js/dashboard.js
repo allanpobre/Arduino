@@ -1,6 +1,6 @@
 document.addEventListener('DOMContentLoaded', function(){
     // ---------- CONFIG (valores iniciais) ----------
-    const DEFAULT_ENDPOINT = 'http://192.168.137.78/status'; // IP do ESP
+    const DEFAULT_ENDPOINT = 'http://esp-dht.local/status'; // IP do ESP (agora mDNS)
     const DEFAULT_INTERVAL = 4000;
     const DEFAULT_MAX_POINTS = 12;
     const DEFAULT_MAX_FAILS = 3;
