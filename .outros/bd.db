@@ -7,3 +7,10 @@ CREATE TABLE IF NOT EXISTS dht (
     umidade FLOAT NOT NULL,
     datahora DATETIME NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS dht_estado_atual (
+    id INT PRIMARY KEY DEFAULT 1, -- Garante que só exista a linha 1
+    temperatura FLOAT NOT NULL,
+    umidade FLOAT NOT NULL,
+    datahora DATETIME NOT NULL
+);

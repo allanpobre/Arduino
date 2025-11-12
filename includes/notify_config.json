@@ -1,8 +1,11 @@
 {
+    "service": "telegram",
+    "telegram_token": "8296168103:AAEr5GGv1ieNOQTU0_3xI0rVxNznI8HPdkc",
+    "telegram_chat_id": "7664820098",
     "enabled": true,
     "phone": "+5517988382203",
     "apikey": "5157834",
-    "notify_temp_above": 25,
-    "notify_hum_above": 60,
+    "notify_temp_above": 40,
+    "notify_hum_above": 70,
     "template": "ALERTA: Temp {temp} \u00b0C, Hum {hum}% em {datahora}"
 }

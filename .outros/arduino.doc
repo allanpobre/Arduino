@@ -1,55 +1,58 @@
 /* esp_dht_final.ino
-   - Leitura DHT11 com retries
-   - Exponhe /status (JSON) otimizado (sem String)
-   - Exponhe /config?temp=...&hum=... (persistidos em EEPROM)
-   - Só faz POST para serverURL quando variação >= thresholds
-   - WiFiManager para config. de WiFi (SSID/Senha)
-   - WiFiManager para config. de Parâmetro (serverURL)
-   - mDNS para hostname amigável (http://esp-dht.local)
-   - Endpoint /resetwifi para forçar reconfiguração via software
-   
-   --- (VERSÃO CORRIGIDA COM PERSISTÊNCIA DE URL) ---
+   - ARQUITETURA DE ALERTA/HISTÓRICO SEPARADA (VERSÃO COMPLETA)
+   - Chama /atualizar_estado.php (Alertas) em intervalo fixo
+   - Chama /salvar_dht.php (Histórico) com base em thresholds
 */
 
 #include <ESP8266WiFi.h>
-#include <WiFiManager.h>        // Para configuração fácil do WiFi
+#include <WiFiManager.h>
 #include <ESP8266HTTPClient.h>
 #include <ESP8266WebServer.h>
-#include <ESP8266mDNS.h>        // Para http://esp-dht.local
+#include <ESP8266mDNS.h>
 #include <DHT.h>
 #include <EEPROM.h>
 
 // ---------- CONFIG ----------
-// O URL do servidor (padrão, será sobrescrito pela EEPROM)
+// URL para SALVAR HISTÓRICO (configurado via WiFiManager)
 char serverURL[128] = "http://192.168.1.100/Arduino/api/salvar_dht.php";
+// URL para ATUALIZAR ESTADO (derivado automaticamente)
+char stateURL[128] = "http://192.168.1.100/Arduino/api/atualizar_estado.php";
 
-#define DHTPIN 4        // GPIO4 - D2
+#define DHTPIN 4
 #define DHTTYPE DHT11
 DHT dht(DHTPIN, DHTTYPE);
 
-const unsigned long SEND_INTERVAL = 2000UL; // intervalo entre leituras (ms), >=2000 recomendado
+// Intervalo principal de LEITURA (a cada 2s)
+const unsigned long READ_INTERVAL = 2000UL;
+// Intervalo de ATUALIZAÇÃO DE ESTADO (Alertas) (a cada 30s)
+const unsigned long STATE_UPDATE_INTERVAL = 30000UL;
 const int DHT_MAX_RETRIES = 3;
 
 // EEPROM (COM ESPAÇO PARA O URL)
-#define EEPROM_SIZE 192   // 1 (magic) + 4 (temp) + 4 (hum) + 128 (url) + folga
+#define EEPROM_SIZE 192
 const int ADDR_MAGIC = 0;
-const int ADDR_TEMP  = 4; // float (4 bytes)
-const int ADDR_HUM   = 8; // float (4 bytes)
-const int ADDR_URL   = 12; // Início do serverURL (ocupa 128 bytes)
+const int ADDR_TEMP  = 4;
+const int ADDR_HUM   = 8;
+const int ADDR_URL   = 12; // serverURL (salvar_dht.php)
 const uint8_t EEPROM_MAGIC = 0xA5;
 
-// thresholds (inicializados, podem ser sobrescritos pela EEPROM)
-float tempThreshold = 2.0f;  // °C
-float humThreshold  = 10.0f; // %
+float tempThreshold = 2.0f;
+float humThreshold  = 10.0f;
 
 ESP8266WebServer server(80);
 
 // ---------- ESTADO ----------
-unsigned long lastSend = 0;
+unsigned long lastRead = 0; // Timer para LEITURA
+unsigned long lastStateUpdate = 0; // Timer para ATUALIZAR ESTADO (Alertas)
 int failCount = 0;
 
 float latestTemp = NAN, latestHum = NAN;
-float lastSentTemp = NAN, lastSentHum = NAN;
+float lastSentTemp = NAN, lastSentHum = NAN; // Para o Threshold 1 (Histórico)
+
+
+// =============================================================
+// --- SEÇÃO DE FUNÇÕES (AGORA COMPLETAS) ---
+// =============================================================
 
 void printNetworkInfo() {
   Serial.println("=== Rede ===");
@@ -73,14 +76,12 @@ void saveConfigToEEPROM() {
   for (int i = 0; i < 4; ++i) EEPROM.write(ADDR_HUM + i, u.b[i]);
 
   // Salva serverURL (char[128])
-  // Limpa a área do URL antes de escrever
   for (int i = 0; i < 128; ++i) {
     EEPROM.write(ADDR_URL + i, 0);
   }
-  // Escreve a nova string
   for (int i = 0; i < 128; ++i) {
     EEPROM.write(ADDR_URL + i, serverURL[i]);
-    if (serverURL[i] == '\0') break; // Para no fim da string
+    if (serverURL[i] == '\0') break; 
   }
   
   EEPROM.commit();
@@ -107,9 +108,8 @@ void loadConfigFromEEPROM() {
       loadedURL[i] = (char)EEPROM.read(ADDR_URL + i);
       if (loadedURL[i] == '\0') break;
     }
-    loadedURL[127] = '\0'; // Garante terminação nula
+    loadedURL[127] = '\0'; 
 
-    // Atualiza a variável global APENAS se um URL válido (ex: http://...) foi lido
     if (strlen(loadedURL) > 10 && strncmp(loadedURL, "http", 4) == 0) {
       strcpy(serverURL, loadedURL);
     }
@@ -119,7 +119,6 @@ void loadConfigFromEEPROM() {
     
   } else {
     Serial.println("EEPROM vazia — usando defaults e salvando.");
-    // Salva os valores padrão (hard-coded) na EEPROM pela primeira vez
     saveConfigToEEPROM(); 
   }
   EEPROM.end();
@@ -142,81 +141,99 @@ bool readDHT(float &temp, float &hum) {
   return false;
 }
 
+// Função para ENVIAR PARA HISTÓRICO (salvar_dht.php)
 bool sendToServer(float temp, float hum) {
   if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("Não enviado: sem conexão WiFi");
+    Serial.println("Não enviado (histórico): sem conexão WiFi");
     return false;
   }
-
   WiFiClient client;
   HTTPClient http;
   
-  // A variável 'serverURL' agora está correta (vinda da EEPROM)
   if (!http.begin(client, serverURL)) { 
-    Serial.println("HTTP.begin falhou");
-    return false;
+     Serial.println("HTTP.begin (histórico) falhou");
+     return false; 
   }
 
   http.addHeader("Content-Type", "application/x-www-form-urlencoded");
-  
   char postBody[64];
   snprintf(postBody, sizeof(postBody), "temp=%.2f&hum=%.2f", temp, hum);
   
-  Serial.print("POST >> "); Serial.println(postBody);
+  Serial.print("POST (Histórico) >> "); Serial.println(postBody);
   Serial.print("Para >> "); Serial.println(serverURL); 
 
   int httpCode = http.POST(postBody);
   if (httpCode > 0) {
     Serial.print("HTTP code: "); Serial.println(httpCode);
-    String payload = http.getString();
-    Serial.print("Resposta servidor: "); Serial.println(payload);
-    http.end();
-    return (httpCode >= 200 && httpCode < 300);
   } else {
-    Serial.print("Erro na requisição POST: ");
-    Serial.println(http.errorToString(httpCode));
-    http.end();
-    return false;
+    Serial.print("Erro POST (Histórico): "); Serial.println(http.errorToString(httpCode));
   }
+  http.end();
+  return (httpCode >= 200 && httpCode < 300);
 }
 
-// --- FUNÇÃO SETUP ATUALIZADA ---
+// NOVA FUNÇÃO para ATUALIZAR ESTADO (atualizar_estado.php)
+bool sendStateUpdate(float temp, float hum) {
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("Não enviado (estado): sem conexão WiFi");
+    return false;
+  }
+  WiFiClient client;
+  HTTPClient http;
+  
+  if (!http.begin(client, stateURL)) { // Usa stateURL
+    Serial.println("HTTP.begin (estado) falhou");
+    return false;
+  }
+
+  http.addHeader("Content-Type", "application/x-www-form-urlencoded");
+  char postBody[64];
+  snprintf(postBody, sizeof(postBody), "temp=%.2f&hum=%.2f", temp, hum);
+  
+  Serial.print("POST (Estado/Alerta) >> "); Serial.println(postBody);
+  Serial.print("Para >> "); Serial.println(stateURL); 
+
+  int httpCode = http.POST(postBody);
+  if (httpCode > 0) {
+    Serial.print("HTTP code: "); Serial.println(httpCode);
+    // String payload = http.getString(); // Opcional: ver se o alerta foi enviado
+    // Serial.println(payload);
+  } else {
+    Serial.print("Erro POST (Estado): "); Serial.println(http.errorToString(httpCode));
+  }
+  
+  http.end();
+  return (httpCode >= 200 && httpCode < 300);
+}
+
+// =============================================================
+// --- SETUP ---
+// =============================================================
+
 void setup() {
   Serial.begin(115200);
   delay(50);
   Serial.println();
-  Serial.println("=== ESP8266 DHT11 - Iniciando (condicional) ===");
+  Serial.println("=== ESP8266 DHT11 - Iniciando (ARQUITETURA SEPARADA) ===");
   dht.begin();
 
-  // <<< ETAPA 1: CARREGA A CONFIG ANTES DE TUDO >>>
-  // Isso garante que serverURL tenha o valor salvo
-  // antes de passá-lo para o WiFiManagerParameter.
+  // ETAPA 1: Carrega a config (inclusive o serverURL)
   loadConfigFromEEPROM();
 
   // --- Conexão WiFi com WiFiManager ---
-  WiFiManager wifiManager; // Declaramos o manager aqui
-
-  // 1. Crie o parâmetro customizado
-  // Agora 'serverURL' contém o valor da EEPROM (ou o default, se vazia)
-  WiFiManagerParameter custom_server_url("server_url", "URL do Servidor API", serverURL, 128);
-
-  // 2. Adicione o parâmetro ao gerenciador
+  WiFiManager wifiManager; 
+  WiFiManagerParameter custom_server_url("server_url", "URL Salvar Histórico (salvar_dht.php)", serverURL, 128);
   wifiManager.addParameter(&custom_server_url);
 
-  // Inicia o portal de configuração
-  // (Ele só aparecerá se o WiFi falhar ou se for forçado)
   if (!wifiManager.autoConnect("AutoConnectAP", "password")) {
     Serial.println("Falha ao conectar e o tempo de config expirou");
-    delay(3000);
-    ESP.restart(); 
-    delay(5000);
+    delay(3000); ESP.restart(); delay(5000);
   }
   
-  // Se chegou aqui, é porque conectou!
   Serial.println("WiFi conectado com sucesso!");
-  printNetworkInfo(); // Mostra o IP no terminal!
+  printNetworkInfo(); 
 
-  // --- (INÍCIO NOVA CONFIG mDNS) ---
+  // --- (Config mDNS) ---
   Serial.println("Iniciando mDNS (http://esp-dht.local)");
   if (!MDNS.begin("esp-dht")) { 
     Serial.println("Erro ao iniciar mDNS!");
@@ -224,26 +241,25 @@ void setup() {
     MDNS.addService("http", "tcp", 80);
     Serial.println("mDNS iniciado. Acesse em: http://esp-dht.local");
   }
-  // --- (FIM NOVA CONFIG mDNS) ---
 
-  // 3. ATUALIZA nossa variável global 'serverURL' com o valor que o usuário digitou
-  // (Se o portal não abriu, getValue() retorna o valor padrão que passamos,
-  // que por sua vez já era o valor da EEPROM)
+  // ETAPA 2: ATUALIZA serverURL e Salva na EEPROM
   strcpy(serverURL, custom_server_url.getValue());
+  saveConfigToEEPROM(); // Salva o serverURL e thresholds
 
-  // <<< ETAPA 2: SALVA A NOVA CONFIG (SE MUDOU) >>>
-  // Se o usuário mudou o URL no portal, salva na EEPROM
-  saveConfigToEEPROM();
+  // ETAPA 3: DERIVA o stateURL (a sua sugestão)
+  strcpy(stateURL, serverURL);
+  char* p = strstr(stateURL, "salvar_dht.php"); // Encontra "salvar_dht.php"
+  if (p) {
+    // Se encontrou, substitui por "atualizar_estado.php"
+    strcpy(p, "atualizar_estado.php");
+  }
 
-  Serial.println("--- Configurações Customizadas Ativas ---");
-  Serial.print("URL do Servidor: ");
-  Serial.println(serverURL); // Mostra o URL que foi salvo
+  Serial.println("--- Configurações Ativas ---");
+  Serial.print("URL Histórico: "); Serial.println(serverURL);
+  Serial.print("URL Estado/Alerta: "); Serial.println(stateURL);
   Serial.println("---------------------------------");
-  
-  // EEPROM thresholds - esta chamada foi movida para o topo (loadConfigFromEEPROM)
-  // loadThresholdsFromEEPROM(); <-- REMOVIDO DAQUI
 
-  // server endpoints
+  // --- ENDPOINTS DO SERVIDOR WEB (AGORA COMPLETOS) ---
   
   // --- ENDPOINT /status OTIMIZADO (sem String) ---
   server.on("/status", HTTP_GET, []() {
@@ -271,7 +287,6 @@ void setup() {
       updated = true;
     }
     if (updated) {
-      // Salva a config (incluindo o URL, que não muda, mas salva os thresholds)
       saveConfigToEEPROM();
     }
     String js = "{\"status\":\"ok\",\"tempThreshold\":" + String(tempThreshold,2) + ",\"humThreshold\":" + String(humThreshold,2) + "}";
@@ -289,20 +304,16 @@ void setup() {
   server.on("/resetwifi", HTTP_GET, []() {
     Serial.println("Recebida solicitação /resetwifi...");
     
-    // 1. Envia a resposta ao usuário IMEDIATAMENTE.
     server.send(200, "text/html", 
       "<h1>Configuracoes de WiFi limpas!</h1>"
       "<p>O ESP vai reiniciar em 3 segundos e criar o portal 'AutoConnectAP'.</p>"
       "<p>Conecte-se a essa rede para reconfigurar.</p>");
     
-    // 2. Dá um pequeno delay para a resposta ser enviada
     delay(3000); 
 
-    // 3. Cria uma instância temporária SÓ para limpar as configs de WiFi
     WiFiManager wifiManager; 
     wifiManager.resetSettings();
     
-    // 4. Limpa NOSSAS configs da EEPROM (invalida o magic byte)
     EEPROM.begin(EEPROM_SIZE);
     EEPROM.write(ADDR_MAGIC, 0x00); // Invalida o "magic number"
     EEPROM.commit();
@@ -310,7 +321,6 @@ void setup() {
     
     Serial.println("Configurações de WiFi e EEPROM limpas. Reiniciando agora...");
     
-    // 5. Reinicia o ESP
     ESP.restart();
   });
 
@@ -319,13 +329,19 @@ void setup() {
   Serial.println("HTTP server iniciado (endpoints: /status, /config, /resetwifi)");
 }
 
+// =============================================================
+// --- LOOP ---
+// =============================================================
+
 void loop() {
   unsigned long now = millis();
   server.handleClient();
-  MDNS.update(); // Mantém o mDNS funcionando
+  MDNS.update();
 
-  if (now - lastSend >= SEND_INTERVAL) {
-    lastSend = now;
+  // --- LÓGICA DE LEITURA (BLOCO 1) ---
+  // Apenas lê o sensor e atualiza as variáveis globais
+  if (now - lastRead >= READ_INTERVAL) {
+    lastRead = now;
 
     float temp = NAN, hum = NAN;
     if (!readDHT(temp, hum)) {
@@ -334,40 +350,54 @@ void loop() {
       return;
     }
 
+    // Atualiza as variáveis globais
     latestTemp = temp;
     latestHum  = hum;
-
     Serial.printf("Leitura -> Temp: %.2f °C  Hum: %.2f %%\n", temp, hum);
+  }
 
-    // decide se grava no DB
-    bool shouldSend = false;
-    if (isnan(lastSentTemp) || isnan(lastSentHum)) {
-      shouldSend = true; // primeira vez salva
-      Serial.println("Primeiro envio: gravando no DB.");
-    } else {
-      float dt = fabs(temp - lastSentTemp);
-      float dh = fabs(hum  - lastSentHum);
-      Serial.printf("Diferença p/ ultimo salvo -> dT=%.2f, dH=%.2f (thresholds: %.2f °C / %.2f %%)\n", dt, dh, tempThreshold, humThreshold);
-      if (dt >= tempThreshold || dh >= humThreshold) {
-        shouldSend = true;
-        Serial.println("Diferença maior que threshold: gravando no DB.");
-      } else {
-        Serial.println("Diferença menor que threshold: NÃO gravar no DB (apenas /status).");
-      }
+  // Se ainda não temos uma leitura válida, não faz nada
+  if (isnan(latestTemp)) {
+    delay(10);
+    return;
+  }
+
+  // --- LÓGICA DE ALERTA (BLOCO 2) - Baseado em Tempo Fixo ---
+  // Envia o estado atual para o servidor verificar alertas
+  if (now - lastStateUpdate >= STATE_UPDATE_INTERVAL) {
+    lastStateUpdate = now;
+    // Envia a última leitura válida
+    sendStateUpdate(latestTemp, latestHum);
+  }
+
+  // --- LÓGICA DE HISTÓRICO (BLOCO 3) - Baseado em Threshold 1 ---
+  // Decide se grava no DB (histórico)
+  // (Verifica se é a primeira leitura ou se os thresholds foram ultrapassados)
+  bool shouldSend = false;
+  if (isnan(lastSentTemp) || isnan(lastSentHum)) {
+    shouldSend = true; // primeira vez salva
+    Serial.println("Primeiro envio para histórico.");
+  } else {
+    float dt = fabs(latestTemp - lastSentTemp);
+    float dh = fabs(latestHum  - lastSentHum);
+    
+    if (dt >= tempThreshold || dh >= humThreshold) {
+      shouldSend = true;
+      Serial.printf("Diferença (Histórico) > threshold (dT=%.2f, dH=%.2f): gravando...\n", dt, dh);
     }
+  }
 
-    if (shouldSend) {
-      // A função sendToServer() agora usa o serverURL que o usuário configurou
-      bool ok = sendToServer(temp, hum); 
-      if (ok) {
-        lastSentTemp = temp;
-        lastSentHum  = hum;
-        Serial.println("Envio OK e atualizado lastSent.");
-        failCount = 0;
-      } else {
-        Serial.println("Envio falhou.");
-        failCount++;
-      }
+  if (shouldSend) {
+    // A função sendToServer() chama "salvar_dht.php"
+    bool ok = sendToServer(latestTemp, latestHum); 
+    if (ok) {
+      lastSentTemp = latestTemp; // Atualiza o último valor salvo
+      lastSentHum  = latestHum;
+      Serial.println("Envio (Histórico) OK.");
+      failCount = 0;
+    } else {
+      Serial.println("Envio (Histórico) falhou.");
+      failCount++;
     }
   }
 

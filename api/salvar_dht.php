@@ -1,12 +1,12 @@
 <?php
-// salvar_dht.php - versão com opcional notificação WhatsApp (CallMeBot)
+// salvar_dht.php - VERSÃO SIMPLIFICADA
+// Apenas salva os dados no banco de dados (tabela dht) para o histórico.
+// A lógica de notificação FOI REMOVIDA daqui.
+
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
-// --- (CAMINHO CORRIGIDO) ---
-// Inclui a função de envio centralizada
-require_once __DIR__ . '/../includes/notify_function.php';
-// --------------------
+// --- NOTA: O 'require_once' da função de notificação FOI REMOVIDO ---
 
 header('Content-Type: application/json');
 header('Access-Control-Allow-Origin: *');
@@ -23,18 +23,13 @@ $db   = "esp_monitor";
 $user = "root";
 $pass = "";
 
-// --- (CAMINHO CORRIGIDO) ---
-// configuração do arquivo de notificações
-$notifyConfigFile = __DIR__ . '/../includes/notify_config.json';
-// --------------------
-
 // conexão com tratamento
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 try {
     $conn = new mysqli($host, $user, $pass, $db);
     $conn->set_charset('utf8mb4');
 } catch (Exception $e) {
-    error_log("Erro de conexão com o DB: " . $e->getMessage());  // Log de erro de conexão
+    error_log("salvar_dht.php: Erro de conexão com o DB: " . $e->getMessage());
     http_response_code(500);
     echo json_encode(["status" => "erro", "mensagem" => "Falha na conexão DB: " . $e->getMessage()]);
     exit;
@@ -45,7 +40,7 @@ $temp_raw = $_GET['temp'] ?? $_POST['temp'] ?? null;
 $hum_raw  = $_GET['hum']  ?? $_POST['hum']  ?? null;
 
 if ($temp_raw === null || $hum_raw === null) {
-    error_log("Erro: 'temp' ou 'hum' não fornecidos");  // Log de erro de parâmetros
+    error_log("salvar_dht.php: Erro: 'temp' ou 'hum' não fornecidos");
     http_response_code(400);
     echo json_encode(["status" => "erro", "mensagem" => "Parâmetros 'temp' e 'hum' obrigatórios"]);
     $conn->close();
@@ -53,7 +48,7 @@ if ($temp_raw === null || $hum_raw === null) {
 }
 
 if (!is_numeric($temp_raw) || !is_numeric($hum_raw)) {
-    error_log("Erro: Parâmetros inválidos: temp={$temp_raw}, hum={$hum_raw}");  // Log de erro se parâmetros não forem numéricos
+    error_log("salvar_dht.php: Erro: Parâmetros inválidos: temp={$temp_raw}, hum={$hum_raw}");
     http_response_code(400);
     echo json_encode(["status" => "erro", "mensagem" => "Parâmetros inválidos: temp={$temp_raw}, hum={$hum_raw}"]);
     $conn->close();
@@ -65,86 +60,22 @@ $hum  = floatval($hum_raw);
 $datahora = date('Y-m-d H:i:s');
 
 try {
+    // Ação única: Inserir no histórico
     $stmt = $conn->prepare("INSERT INTO dht (temperatura, umidade, datahora) VALUES (?, ?, ?)");
     if ($stmt === false) {
-        error_log("Erro no prepare da query: " . $conn->error);  // Log se falhar no prepare
         throw new Exception($conn->error);
     }
-    $stmt->bind_param("dds", $temp, $hum, $datahora); // d,d,s
+    $stmt->bind_param("dds", $temp, $hum, $datahora);
     if (!$stmt->execute()) {
-        error_log("Erro na execução da query: " . $stmt->error);  // Log se falhar na execução
         throw new Exception($stmt->error);
     }
 
     $insertedId = $stmt->insert_id;
     $stmt->close();
 
-    // --- NOTIFICAÇÃO WHATSAPP (CALLMEBOT) ---
-    $notified = false;
-    $notify_response = null;
-    if (file_exists($notifyConfigFile)) {
-        $cfgRaw = @file_get_contents($notifyConfigFile);
-        $cfg = json_decode($cfgRaw, true);
-        if (json_last_error() === JSON_ERROR_NONE && !empty($cfg['enabled'])) {
-            // parâmetros do cfg (esperado: phone, apikey, enabled, optional thresholds)
-            $phone = trim($cfg['phone'] ?? '');
-            $apikey = trim($cfg['apikey'] ?? '');
-            $template = $cfg['template'] ?? 'ALERTA: Temp {temp} °C, Hum {hum}% em {datahora}';
-            // thresholds opcionais (se definidos, só enviar quando ultrapassar)
-            $notify_temp_above = isset($cfg['notify_temp_above']) && is_numeric($cfg['notify_temp_above']) ? floatval($cfg['notify_temp_above']) : null;
-            $notify_hum_above  = isset($cfg['notify_hum_above'])  && is_numeric($cfg['notify_hum_above']) ? floatval($cfg['notify_hum_above'])  : null;
+    // --- TODO O BLOCO DE NOTIFICAÇÃO FOI REMOVIDO ---
 
-            // --- LÓGICA ALTERADA (PRECISA DE APENAS UM - OU) ---
-            $shouldNotify = false; // Começa como falso
-            $reason = ""; // Para log
-
-            if ($notify_temp_above !== null && $temp >= $notify_temp_above) {
-                $shouldNotify = true; // Atingiu o limite de temperatura
-                $reason = "Temperatura ({$temp}°C >= {$notify_temp_above}°C)";
-            }
-            // Usa 'else if' se quiser priorizar temp, ou 'if' se ambos puderem ser a causa (mantive 'if' para clareza do log)
-            if ($notify_hum_above !== null  && $hum >= $notify_hum_above) {
-                 if ($shouldNotify) {
-                     $reason .= " E Umidade ({$hum}% >= {$notify_hum_above}%)"; // Se temp já era true, adiciona
-                 } else {
-                     $reason = "Umidade ({$hum}% >= {$notify_hum_above}%)"; // Se temp não era true, define
-                 }
-                $shouldNotify = true; // Atingiu o limite de umidade (OU o de temperatura)
-            }
-            // ------------------------------------------------
-
-            // Adiciona verificação se os thresholds foram definidos
-            if (($notify_temp_above === null && $notify_hum_above === null)) {
-                 $shouldNotify = false; // Não notifica se nenhum threshold está definido
-                 error_log("salvar_dht.php: Notificação não enviada - nenhum threshold definido em notify_config.json");
-            }
-
-
-            if ($shouldNotify && !empty($phone) && !empty($apikey)) {
-                error_log("salvar_dht.php: Condição de notificação atingida. Motivo: " . $reason); // Log do motivo
-                // monta a mensagem substituindo chaves simples
-                $message = str_replace(
-                    ['{temp}','{hum}','{datahora}','{id}'],
-                    [number_format($temp,2, '.', ''), number_format($hum,2,'.',''), $datahora, $insertedId],
-                    $template
-                );
-
-                // envia via CallMeBot (AGORA A FUNÇÃO EXISTE)
-                $sendResult = send_whatsapp_callmebot($phone, $message, $apikey);
-                $notified = $sendResult['ok'];
-                $notify_response = $sendResult;
-                // registrar log server-side
-                error_log("salvar_dht.php: Tentativa de envio -> phone={$phone} ok=" . ($notified? '1':'0') . " resp=" . ($sendResult['body'] ?? 'no-body'));
-            } elseif (!$shouldNotify && ($notify_temp_above !== null || $notify_hum_above !== null)) {
-                // Log apenas se a notificação estava habilitada e thresholds definidos, mas não atingidos
-                error_log("salvar_dht.php: Notificação não enviada - limites não atingidos (T={$temp} < {$notify_temp_above}, H={$hum} < {$notify_hum_above})");
-            }
-        } else {
-            error_log("salvar_dht.php: notify_config.json inválido, JSON parse error ou notificações desabilitadas.");
-        }
-    } // else: notificação não configurada
-
-    echo json_encode(["status" => "ok", "temperatura" => $temp, "umidade" => $hum, "datahora" => $datahora, "id" => $insertedId, "notified" => $notified, "notify_response" => $notify_response]);
+    echo json_encode(["status" => "ok", "mensagem" => "Salvo no histórico", "id" => $insertedId]);
     $conn->close();
     exit;
 
