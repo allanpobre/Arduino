@@ -7,6 +7,8 @@
    - WiFiManager para config. de Parâmetro (serverURL)
    - mDNS para hostname amigável (http://esp-dht.local)
    - Endpoint /resetwifi para forçar reconfiguração via software
+   
+   --- (VERSÃO CORRIGIDA COM PERSISTÊNCIA DE URL) ---
 */
 
 #include <ESP8266WiFi.h>
@@ -18,11 +20,8 @@
 #include <EEPROM.h>
 
 // ---------- CONFIG ----------
-// O URL do servidor agora é uma variável que o WiFiManager pode preencher
+// O URL do servidor (padrão, será sobrescrito pela EEPROM)
 char serverURL[128] = "http://192.168.1.100/Arduino/api/salvar_dht.php";
-
-// --- O PINO DE RESET FOI REMOVIDO ---
-// #define WIFI_RESET_PIN D7 // (GPIO13) <-- REMOVIDO
 
 #define DHTPIN 4        // GPIO4 - D2
 #define DHTTYPE DHT11
@@ -31,11 +30,12 @@ DHT dht(DHTPIN, DHTTYPE);
 const unsigned long SEND_INTERVAL = 2000UL; // intervalo entre leituras (ms), >=2000 recomendado
 const int DHT_MAX_RETRIES = 3;
 
-// EEPROM
-#define EEPROM_SIZE 64
+// EEPROM (COM ESPAÇO PARA O URL)
+#define EEPROM_SIZE 192   // 1 (magic) + 4 (temp) + 4 (hum) + 128 (url) + folga
 const int ADDR_MAGIC = 0;
 const int ADDR_TEMP  = 4; // float (4 bytes)
 const int ADDR_HUM   = 8; // float (4 bytes)
+const int ADDR_URL   = 12; // Início do serverURL (ocupa 128 bytes)
 const uint8_t EEPROM_MAGIC = 0xA5;
 
 // thresholds (inicializados, podem ser sobrescritos pela EEPROM)
@@ -60,32 +60,67 @@ void printNetworkInfo() {
   Serial.println("============");
 }
 
-void saveThresholdsToEEPROM() {
+// --- FUNÇÃO DE SALVAR ATUALIZADA ---
+void saveConfigToEEPROM() {
   EEPROM.begin(EEPROM_SIZE);
   EEPROM.write(ADDR_MAGIC, EEPROM_MAGIC);
+  
+  // Salva thresholds
   union { float f; uint8_t b[4]; } u;
   u.f = tempThreshold;
   for (int i = 0; i < 4; ++i) EEPROM.write(ADDR_TEMP + i, u.b[i]);
   u.f = humThreshold;
   for (int i = 0; i < 4; ++i) EEPROM.write(ADDR_HUM + i, u.b[i]);
+
+  // Salva serverURL (char[128])
+  // Limpa a área do URL antes de escrever
+  for (int i = 0; i < 128; ++i) {
+    EEPROM.write(ADDR_URL + i, 0);
+  }
+  // Escreve a nova string
+  for (int i = 0; i < 128; ++i) {
+    EEPROM.write(ADDR_URL + i, serverURL[i]);
+    if (serverURL[i] == '\0') break; // Para no fim da string
+  }
+  
   EEPROM.commit();
   EEPROM.end();
-  Serial.printf("Thresholds salvos na EEPROM: temp=%.2f hum=%.2f\n", tempThreshold, humThreshold);
+  Serial.println("Configuracao salva na EEPROM (Thresholds + URL).");
+  Serial.printf("URL salva: %s\n", serverURL);
 }
 
-void loadThresholdsFromEEPROM() {
+// --- FUNÇÃO DE CARREGAR ATUALIZADA ---
+void loadConfigFromEEPROM() {
   EEPROM.begin(EEPROM_SIZE);
   uint8_t magic = EEPROM.read(ADDR_MAGIC);
   if (magic == EEPROM_MAGIC) {
+    // Carrega thresholds
     union { float f; uint8_t b[4]; } u;
     for (int i = 0; i < 4; ++i) u.b[i] = EEPROM.read(ADDR_TEMP + i);
     tempThreshold = u.f;
     for (int i = 0; i < 4; ++i) u.b[i] = EEPROM.read(ADDR_HUM + i);
     humThreshold = u.f;
-    Serial.printf("Thresholds carregados da EEPROM: temp=%.2f hum=%.2f\n", tempThreshold, humThreshold);
+
+    // Carrega serverURL
+    char loadedURL[128];
+    for (int i = 0; i < 128; ++i) {
+      loadedURL[i] = (char)EEPROM.read(ADDR_URL + i);
+      if (loadedURL[i] == '\0') break;
+    }
+    loadedURL[127] = '\0'; // Garante terminação nula
+
+    // Atualiza a variável global APENAS se um URL válido (ex: http://...) foi lido
+    if (strlen(loadedURL) > 10 && strncmp(loadedURL, "http", 4) == 0) {
+      strcpy(serverURL, loadedURL);
+    }
+    
+    Serial.println("Configuracao carregada da EEPROM.");
+    Serial.printf("URL: %s, Temp: %.2f, Hum: %.2f\n", serverURL, tempThreshold, humThreshold);
+    
   } else {
-    Serial.println("EEPROM vazia — usando thresholds padrao e salvando.");
-    saveThresholdsToEEPROM();
+    Serial.println("EEPROM vazia — usando defaults e salvando.");
+    // Salva os valores padrão (hard-coded) na EEPROM pela primeira vez
+    saveConfigToEEPROM(); 
   }
   EEPROM.end();
 }
@@ -116,6 +151,7 @@ bool sendToServer(float temp, float hum) {
   WiFiClient client;
   HTTPClient http;
   
+  // A variável 'serverURL' agora está correta (vinda da EEPROM)
   if (!http.begin(client, serverURL)) { 
     Serial.println("HTTP.begin falhou");
     return false;
@@ -144,6 +180,7 @@ bool sendToServer(float temp, float hum) {
   }
 }
 
+// --- FUNÇÃO SETUP ATUALIZADA ---
 void setup() {
   Serial.begin(115200);
   delay(50);
@@ -151,19 +188,23 @@ void setup() {
   Serial.println("=== ESP8266 DHT11 - Iniciando (condicional) ===");
   dht.begin();
 
+  // <<< ETAPA 1: CARREGA A CONFIG ANTES DE TUDO >>>
+  // Isso garante que serverURL tenha o valor salvo
+  // antes de passá-lo para o WiFiManagerParameter.
+  loadConfigFromEEPROM();
+
   // --- Conexão WiFi com WiFiManager ---
   WiFiManager wifiManager; // Declaramos o manager aqui
 
-  // --- (BLOCO DE RESET FÍSICO REMOVIDO) ---
-  // A verificação do pino D7 foi removida.
-
   // 1. Crie o parâmetro customizado
+  // Agora 'serverURL' contém o valor da EEPROM (ou o default, se vazia)
   WiFiManagerParameter custom_server_url("server_url", "URL do Servidor API", serverURL, 128);
 
   // 2. Adicione o parâmetro ao gerenciador
   wifiManager.addParameter(&custom_server_url);
 
   // Inicia o portal de configuração
+  // (Ele só aparecerá se o WiFi falhar ou se for forçado)
   if (!wifiManager.autoConnect("AutoConnectAP", "password")) {
     Serial.println("Falha ao conectar e o tempo de config expirou");
     delay(3000);
@@ -185,17 +226,22 @@ void setup() {
   }
   // --- (FIM NOVA CONFIG mDNS) ---
 
-
   // 3. ATUALIZA nossa variável global 'serverURL' com o valor que o usuário digitou
+  // (Se o portal não abriu, getValue() retorna o valor padrão que passamos,
+  // que por sua vez já era o valor da EEPROM)
   strcpy(serverURL, custom_server_url.getValue());
 
-  Serial.println("--- Configurações Customizadas ---");
+  // <<< ETAPA 2: SALVA A NOVA CONFIG (SE MUDOU) >>>
+  // Se o usuário mudou o URL no portal, salva na EEPROM
+  saveConfigToEEPROM();
+
+  Serial.println("--- Configurações Customizadas Ativas ---");
   Serial.print("URL do Servidor: ");
   Serial.println(serverURL); // Mostra o URL que foi salvo
   Serial.println("---------------------------------");
   
-  // EEPROM thresholds
-  loadThresholdsFromEEPROM();
+  // EEPROM thresholds - esta chamada foi movida para o topo (loadConfigFromEEPROM)
+  // loadThresholdsFromEEPROM(); <-- REMOVIDO DAQUI
 
   // server endpoints
   
@@ -225,9 +271,11 @@ void setup() {
       updated = true;
     }
     if (updated) {
-      saveThresholdsToEEPROM();
+      // Salva a config (incluindo o URL, que não muda, mas salva os thresholds)
+      saveConfigToEEPROM();
     }
     String js = "{\"status\":\"ok\",\"tempThreshold\":" + String(tempThreshold,2) + ",\"humThreshold\":" + String(humThreshold,2) + "}";
+  
     server.sendHeader("Access-Control-Allow-Origin", "*");
     server.send(200, "application/json", js);
   });
@@ -237,7 +285,7 @@ void setup() {
     server.send(200, "text/plain", "pong");
   });
 
-  // --- NOVO ENDPOINT DE RESET VIA SOFTWARE ---
+  // --- NOVO ENDPOINT DE RESET VIA SOFTWARE (ATUALIZADO) ---
   server.on("/resetwifi", HTTP_GET, []() {
     Serial.println("Recebida solicitação /resetwifi...");
     
@@ -250,13 +298,19 @@ void setup() {
     // 2. Dá um pequeno delay para a resposta ser enviada
     delay(3000); 
 
-    // 3. Cria uma instância temporária SÓ para limpar as configs
+    // 3. Cria uma instância temporária SÓ para limpar as configs de WiFi
     WiFiManager wifiManager; 
     wifiManager.resetSettings();
     
-    Serial.println("Configurações limpas. Reiniciando agora...");
+    // 4. Limpa NOSSAS configs da EEPROM (invalida o magic byte)
+    EEPROM.begin(EEPROM_SIZE);
+    EEPROM.write(ADDR_MAGIC, 0x00); // Invalida o "magic number"
+    EEPROM.commit();
+    EEPROM.end();
     
-    // 4. Reinicia o ESP
+    Serial.println("Configurações de WiFi e EEPROM limpas. Reiniciando agora...");
+    
+    // 5. Reinicia o ESP
     ESP.restart();
   });
 

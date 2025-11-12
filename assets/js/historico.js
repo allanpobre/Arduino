@@ -10,13 +10,16 @@ document.addEventListener('DOMContentLoaded', function() {
     const maxVal = document.getElementById('maxVal');
     const avgVal = document.getElementById('avgVal');
     const periodoBtns = document.getElementById('periodoBtns');
-    const tabelaContainer = document.getElementById('tabela-container'); // Container da nova tabela
+    const tabelaContainer = document.getElementById('tabela-container');
+
+    // Armazena a instância do DataTables
+    let dataTableInstance = null;
 
     // ---------- Chart.js setup ----------
     const mainCtx = document.getElementById('mainChart').getContext('2d');
     
     function createGradient(ctx){ 
-      const g = ctx.createLinearGradient(0, 0, 0, 450); // Altura do gráfico
+      const g = ctx.createLinearGradient(0, 0, 0, 450);
       g.addColorStop(0, 'rgba(255,99,132,0.18)');
       g.addColorStop(1, 'rgba(255,99,132,0.02)');
       return g;
@@ -30,7 +33,7 @@ document.addEventListener('DOMContentLoaded', function() {
           data:[], 
           fill:true, 
           tension:0.3, 
-          pointRadius:2, // Pontos menores
+          pointRadius:2,
           borderWidth:2, 
           yAxisID: 'y_temp', 
           backgroundColor: createGradient(mainCtx), 
@@ -41,7 +44,7 @@ document.addEventListener('DOMContentLoaded', function() {
           data:[], 
           fill:false, 
           tension:0.3, 
-          pointRadius:2, // Pontos menores
+          pointRadius:2,
           borderWidth:2, 
           yAxisID: 'y_hum', 
           borderColor: 'rgba(54,162,235,1)' 
@@ -62,26 +65,21 @@ document.addEventListener('DOMContentLoaded', function() {
                 display:true, 
                 grid:{display:false},
                 title: { display: true, text: 'Data e Hora' },
-                ticks: {
-                    autoSkip: true,
-                    maxTicksLimit: 20 // Limita para não poluir o eixo
-                }
+                ticks: { autoSkip: true, maxTicksLimit: 20 }
             },
-            // --- EIXOS FIXOS ---
             y_temp:{ 
                 position:'left', 
                 title:{display:true, text:'°C'},
-                min: 0,  // Eixo fixo
-                max: 50  // Eixo fixo
+                min: 0,
+                max: 50
             }, 
             y_hum:{ 
                 position:'right', 
                 grid:{display:false}, 
                 title:{display:true, text:'%'},
-                min: 0,   // Eixo fixo
-                max: 100  // Eixo fixo
+                min: 0,
+                max: 100
             } 
-            // --- FIM DAS ALTERAÇÕES ---
         } 
       }
     };
@@ -89,7 +87,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // ---------- Funções de Dados ----------
 
-    // Helper para calcular estatísticas
     function statsFromData(arr, key){ 
       if(!arr.length) return {min:NaN,max:NaN,avg:NaN};
       const vals = arr.map(r=> r[key]);
@@ -98,10 +95,12 @@ document.addEventListener('DOMContentLoaded', function() {
       return {min,max,avg};
     }
 
-    // Função principal para buscar dados e atualizar tudo
     async function fetchHistory(horas = 24) {
         statusInfo.innerHTML = `<span class="spinner-border spinner-border-sm"></span> Carregando ${horas}h...`;
-        tabelaContainer.innerHTML = '<p class="text-center text-muted p-5">Carregando dados...</p>'; // Mostra loading na tabela
+        
+        if (!dataTableInstance) {
+            tabelaContainer.innerHTML = '<p class="text-center text-muted p-5">Carregando dados...</p>';
+        }
         
         const url = `${API_ENDPOINT}?horas=${horas}&_ts=${Date.now()}`;
 
@@ -114,38 +113,41 @@ document.addEventListener('DOMContentLoaded', function() {
 
             const dados = json.dados;
             
-            // 1. Atualiza os dados do gráfico
+            // 1. Atualiza gráfico
             mainChart.data.labels = dados.map(d => {
-                // Converte '2025-11-12 14:30:00' para '12/11 14:30'
-                const dt = new Date(d.t.replace(' ', 'T') + 'Z'); // Trata como UTC
+                const dt = new Date(d.t.replace(' ', 'T') + 'Z');
                 return dt.toLocaleString('pt-BR', { 
                     day: 'numeric', 
                     month: 'numeric', 
                     hour: 'numeric', 
                     minute: 'numeric',
-                    timeZone: 'America/Sao_Paulo' // Ajuste para seu fuso!
+                    timeZone: 'America/Sao_Paulo'
                 });
             });
             mainChart.data.datasets[0].data = dados.map(d => d.temp);
             mainChart.data.datasets[1].data = dados.map(d => d.hum);
             mainChart.update();
 
-            // 2. Atualiza estatísticas (Temperatura)
+            // 2. Atualiza estatísticas
             const s = statsFromData(dados, 'temp');
             pointsCount.innerText = dados.length;
             minVal.innerText = isNaN(s.min)?'—': s.min.toFixed(1)+' °C';
             maxVal.innerText = isNaN(s.max)?'—': s.max.toFixed(1)+' °C';
             avgVal.innerText = isNaN(s.avg)?'—': s.avg.toFixed(1)+' °C';
-
             statusInfo.innerText = `Exibindo ${dados.length} registros.`;
 
-            // 3. Preenche a tabela de dados
+            // 3. Preenche a tabela
             populateTable(dados);
 
         } catch (err) {
             console.error(err);
             statusInfo.innerText = 'Erro ao carregar dados.';
             statusInfo.style.color = 'red';
+            
+            if (dataTableInstance) {
+                dataTableInstance.destroy();
+                dataTableInstance = null;
+            }
             tabelaContainer.innerHTML = `<p class="text-center text-danger p-5">Erro ao carregar dados: ${err.message}</p>`;
         }
     }
@@ -154,14 +156,22 @@ document.addEventListener('DOMContentLoaded', function() {
      * Preenche a aba de Tabela com os dados brutos.
      */
     function populateTable(dados) {
+        
+        if (dataTableInstance) {
+            dataTableInstance.destroy();
+            dataTableInstance = null;
+        }
+
+        tabelaContainer.innerHTML = ''; 
+
         if (!dados || dados.length === 0) {
             tabelaContainer.innerHTML = '<p class="text-center text-muted p-5">Nenhum dado encontrado para este período.</p>';
             return;
         }
 
-        let tableHtml = '<table class="table table-sm table-striped table-hover">';
+        let tableHtml = '<table id="tabelaHistorico" class="table table-sm table-striped table-hover" style="width:100%">';
         tableHtml += `
-            <thead class="table-light" style="position: sticky; top: 0;">
+            <thead class="table-light">
                 <tr>
                     <th>Data/Hora</th>
                     <th>Temperatura (°C)</th>
@@ -171,13 +181,10 @@ document.addEventListener('DOMContentLoaded', function() {
             <tbody>
         `;
 
-        // Itera ao contrário (mostra os mais recentes primeiro)
-        for (let i = dados.length - 1; i >= 0; i--) {
-            const d = dados[i];
-            const dt = new Date(d.t.replace(' ', 'T') + 'Z'); // Trata como UTC
-            // Formato: 12/11/25, 15:01:02
+        for (const d of dados) {
+            const dt = new Date(d.t.replace(' ', 'T') + 'Z'); 
             const dataFormatada = dt.toLocaleString('pt-BR', {
-                timeZone: 'America/Sao_Paulo', // Ajuste para seu fuso!
+                timeZone: 'America/Sao_Paulo',
                 year: '2-digit', month: '2-digit', day: '2-digit',
                 hour: '2-digit', minute: '2-digit', second: '2-digit'
             });
@@ -193,17 +200,50 @@ document.addEventListener('DOMContentLoaded', function() {
 
         tableHtml += '</tbody></table>';
         tabelaContainer.innerHTML = tableHtml;
+
+        // 5. Inicializa o DataTables
+        try {
+            dataTableInstance = new DataTable('#tabelaHistorico', {
+                order: [[0, 'desc']], // Ordena pela data (coluna 0) decrescente
+                responsive: true,
+                
+                // ### ADICIONADO: TRADUÇÃO PT-BR ###
+                language: {
+                    "emptyTable": "Nenhum registro encontrado",
+                    "info": "Mostrando de _START_ até _END_ de _TOTAL_ registros",
+                    "infoEmpty": "Mostrando 0 até 0 de 0 registros",
+                    "infoFiltered": "(Filtrados de _MAX_ registros)",
+                    "infoPostFix": "",
+                    "infoThousands": ".",
+                    "lengthMenu": "_MENU_ resultados por página",
+                    "loadingRecords": "Carregando...",
+                    "processing": "Processando...",
+                    "zeroRecords": "Nenhum registro encontrado",
+                    "search": "Pesquisar:",
+                    "paginate": {
+                        "next": "Próximo",
+                        "previous": "Anterior",
+                        "first": "Primeiro",
+                        "last": "Último"
+                    },
+                    "aria": {
+                        "sortAscending": ": Ordenar por ordem crescente",
+                        "sortDescending": ": Ordenar por ordem decrescente"
+                    }
+                }
+                // ### FIM DA TRADUÇÃO ###
+            });
+        } catch (e) {
+            console.error("Falha ao iniciar DataTables:", e);
+            tabelaContainer.innerHTML = `<p class="text-center text-danger p-5">Erro ao inicializar a tabela interativa.</p>`;
+        }
     }
 
 
     // ---------- Event Listeners ----------
-
-    // Adiciona listener para os botões de período
     periodoBtns.addEventListener('click', function(e) {
         if (e.target.tagName === 'BUTTON') {
-            // Remove 'active' de todos
             periodoBtns.querySelectorAll('button').forEach(btn => btn.classList.remove('active'));
-            // Adiciona 'active' ao clicado
             e.target.classList.add('active');
             
             const horas = e.target.getAttribute('data-horas');
