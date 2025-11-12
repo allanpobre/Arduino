@@ -24,6 +24,12 @@
         </a>
       </li>
       <li class="nav-item">
+        <a href="pagina_historico.html" class="nav-link" target="contentFrame">
+          <i class="bi bi-clock-history"></i>
+          Histórico (BD)
+        </a>
+      </li>
+      <li class="nav-item">
         <a href="api/notify_admin.php" class="nav-link" target="contentFrame">
           <i class="bi bi-whatsapp"></i>
           Notificações
