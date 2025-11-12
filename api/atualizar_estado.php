@@ -1,12 +1,12 @@
 <?php
 // atualizar_estado.php
 // Recebe o "estado" ao vivo do ESP, atualiza a tabela de estado
-// e dispara as notificações se os limites forem atingidos.
+// e dispara as notificações (APENAS TELEGRAM)
 
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
-// Inclui a função de envio (Telegram/WhatsApp)
+// Inclui a função de envio (Telegram)
 require_once __DIR__ . '/../includes/notify_function.php';
 
 header('Content-Type: application/json');
@@ -25,7 +25,7 @@ $user = "root";
 $pass = "";
 $notifyConfigFile = __DIR__ . '/../includes/notify_config.json';
 
-// --- Validação dos dados recebidos (igual ao salvar_dht) ---
+// --- Validação dos dados recebidos ---
 $temp_raw = $_GET['temp'] ?? $_POST['temp'] ?? null;
 $hum_raw  = $_GET['hum']  ?? $_POST['hum']  ?? null;
 
@@ -39,7 +39,6 @@ if (!is_numeric($temp_raw) || !is_numeric($hum_raw)) {
     echo json_encode(["status" => "erro", "mensagem" => "Parâmetros inválidos"]);
     exit;
 }
-
 $temp = floatval($temp_raw);
 $hum  = floatval($hum_raw);
 $datahora = date('Y-m-d H:i:s');
@@ -57,13 +56,11 @@ try {
     exit;
 }
 
-// --- LÓGICA DE ALERTA (MOVIDA PARA CÁ) ---
 $notified = false;
 $notify_response = null;
 
 try {
-    // AÇÃO 1: Sobrescrever a tabela de estado atual (sua sugestão)
-    // Usamos INSERT... ON DUPLICATE KEY UPDATE para sempre atualizar a linha '1'
+    // AÇÃO 1: Sobrescrever a tabela de estado atual
     $stmt = $conn->prepare("INSERT INTO dht_estado_atual (id, temperatura, umidade, datahora) 
                            VALUES (1, ?, ?, ?) 
                            ON DUPLICATE KEY UPDATE 
@@ -96,36 +93,31 @@ try {
                  $reason .= " ({$hum}% >= {$notify_hum_above}%)";
                  $shouldNotify = true;
             }
-
-            // (Esta verificação é importante)
             if (($notify_temp_above === null && $notify_hum_above === null)) {
                  $shouldNotify = false; 
                  error_log("atualizar_estado.php: Notificação não enviada - nenhum threshold definido.");
             }
 
             if ($shouldNotify) {
-                // ... (Lógica de envio idêntica ao salvar_dht) ...
                 error_log("atualizar_estado.php: Condição de notificação atingida. Motivo: " . $reason);
+                
                 $template = $cfg['template'] ?? 'ALERTA: Temp {temp} °C, Hum {hum}% em {datahora}';
                 $message = str_replace(
                     ['{temp}','{hum}','{datahora}','{id}'],
-                    [number_format($temp,2, '.', ''), number_format($hum,2,'.',''), $datahora, "LIVE"], // {id} não é relevante aqui
+                    [number_format($temp,2, '.', ''), number_format($hum,2,'.',''), $datahora, "LIVE"],
                     $template
                 );
-                $service = $cfg['service'] ?? 'whatsapp';
                 
-                if ($service === 'telegram' && !empty($cfg['telegram_token']) && !empty($cfg['telegram_chat_id'])) {
+                // --- LÓGICA SIMPLIFICADA (SÓ TELEGRAM) ---
+                if (!empty($cfg['telegram_token']) && !empty($cfg['telegram_chat_id'])) {
                     $sendResult = send_telegram_bot($cfg['telegram_token'], $cfg['telegram_chat_id'], $message);
                     $notified = $sendResult['ok'];
                     $notify_response = $sendResult;
                     error_log("atualizar_estado.php: Tentativa de envio Telegram -> ok=" . ($notified? '1':'0'));
-
-                } elseif ($service === 'whatsapp' && !empty($cfg['phone']) && !empty($cfg['apikey'])) {
-                    $sendResult = send_whatsapp_callmebot($cfg['phone'], $message, $cfg['apikey']);
-                    $notified = $sendResult['ok'];
-                    $notify_response = $sendResult;
-                    error_log("atualizar_estado.php: Tentativa de envio WhatsApp -> ok=" . ($notified? '1':'0'));
+                } else {
+                    error_log("atualizar_estado.php: Notificação falhou - credenciais do Telegram ausentes.");
                 }
+
             } // fim $shouldNotify
         } // fim $cfg['enabled']
     } // fim file_exists

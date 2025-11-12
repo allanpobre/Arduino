@@ -13,8 +13,7 @@
   <div class="sidebar d-flex flex-column">
     <div class="logo d-flex align-items-center mb-3">
       <i class="bi bi-speedometer2 me-2"></i>
-      <span>M.A.S</span>
-    </div>
+      <span>M.A.S</span> </div>
     <hr>
     <ul class="nav nav-pills flex-column mb-auto">
       <li class="nav-item">
@@ -31,13 +30,12 @@
       </li>
       <li class="nav-item">
         <a href="api/notify_admin.php" class="nav-link" target="contentFrame">
-          <i class="bi bi-whatsapp"></i>
-          Notificações
+          <i class="bi bi-telegram"></i> Notificações
         </a>
       </li>
     </ul>
     <hr>
-    <div class="small text-muted">Projeto ESP8266</div>
+    <div class="small text-muted">Monitoramento v1.0</div>
   </div>
 
   <iframe name="contentFrame" src="pagina_dashboard.html" class="content-frame">
